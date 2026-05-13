@@ -1,9 +1,10 @@
 import os
+import base64
 import httpx
 from agents.llm_client import call_local, call_claude
-from agents.printify_client import upload_image, create_product, publish_to_shopify
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
+SHOPIFY_API_VERSION = "2025-01"
 
 DESCRIPTION_SYSTEM = """You are a Shopify product copywriter for a print-on-demand store.
 Write a short, compelling product description (2-3 sentences max).
@@ -11,36 +12,64 @@ Focus on the niche audience and what makes the design special.
 No fluff. Output only the description text."""
 
 
+def _shopify_headers() -> dict:
+    return {
+        "X-Shopify-Access-Token": os.getenv("SHOPIFY_ACCESS_TOKEN", ""),
+        "Content-Type": "application/json",
+    }
+
+
+def _shopify_url(path: str) -> str:
+    store = os.getenv("SHOPIFY_STORE_URL", "")
+    return f"https://{store}/admin/api/{SHOPIFY_API_VERSION}/{path}"
+
+
+async def _upload_image_to_shopify(image_path: str, product_id: int, client: httpx.AsyncClient) -> str:
+    """Read image from disk, base64-encode it, attach to Shopify product. Returns image src URL."""
+    disk_path = os.path.join("frontend", "public", image_path.lstrip("/"))
+    with open(disk_path, "rb") as f:
+        image_data = base64.b64encode(f.read()).decode("utf-8")
+
+    filename = os.path.basename(disk_path)
+    payload = {
+        "image": {
+            "attachment": image_data,
+            "filename": filename,
+            "alt": "Product design",
+        }
+    }
+    r = await client.post(
+        _shopify_url(f"products/{product_id}/images.json"),
+        json=payload,
+        headers=_shopify_headers(),
+        timeout=60,
+    )
+    r.raise_for_status()
+    return r.json()["image"]["src"]
+
+
 async def run_factory(input: dict) -> dict:
     """
-    Publish an approved design via Printify → Shopify.
+    Publish an approved design directly to Shopify as a draft product listing.
 
-    Pipeline:
-      1. Write product description (Ollama → Claude fallback)
-      2. Upload design image to Printify media library
-      3. Create Printify product with all variants
-      4. Publish Printify product to Shopify
+    Printify is used for mockups and fulfillment — wired separately.
+    This step creates the Shopify listing with the flat design image.
 
-    Input keys (from run_designer output, after approval):
-      - image_path: web path to design image (e.g. /assets/generated/foo.png)
+    Input keys:
+      - image_path: web path to the design image
       - niche: niche name
       - product_type: e.g. "Unisex T-Shirt"
       - image_prompt: used to write the description
       - keywords: list of tags
-      - design_direction: optional, used for description
 
     Returns:
-      - product_id: Printify product ID
-      - product_url: Shopify admin URL (if store URL configured)
-      - title: product title
-      - description: generated copy
-      - model_used: which LLM wrote the description
+      - product_id, product_url, storefront_url, title, model_used
     """
     niche        = input.get("niche", "Custom Design")
     product_type = input.get("product_type", "Unisex T-Shirt")
     image_path   = input.get("image_path", "")
 
-    # Step 1 — write product description
+    # Step 1 — write product description via Ollama (fall back to Claude)
     desc_prompt = f"""Write a product description for a {product_type} in the "{niche}" niche.
 Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
 
@@ -53,38 +82,47 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
 
     title = f"{niche} — {product_type}"
 
-    # Step 2 — resolve disk path and upload to Printify
-    disk_path = os.path.join("frontend", "public", image_path.lstrip("/"))
-    filename  = os.path.basename(disk_path)
-    image_id  = await upload_image(disk_path, filename)
+    # Step 2 — create the Shopify product as a draft
+    product_payload = {
+        "product": {
+            "title": title,
+            "body_html": f"<p>{description}</p>",
+            "product_type": product_type,
+            "status": "draft",
+            "tags": ", ".join(input.get("keywords", [])),
+            "variants": [
+                {
+                    "price": "29.99",
+                    "requires_shipping": True,
+                    "taxable": True,
+                }
+            ],
+        }
+    }
 
-    # Step 3 — create Printify product
-    tags = input.get("keywords", [])
-    printify_product = await create_product(
-        title=title,
-        description=description,
-        image_id=image_id,
-        tags=tags,
-    )
-    printify_product_id = printify_product["id"]
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            _shopify_url("products.json"),
+            json=product_payload,
+            headers=_shopify_headers(),
+        )
+        r.raise_for_status()
+        product    = r.json()["product"]
+        product_id = product["id"]
 
-    # Step 4 — publish to Shopify via Printify
-    await publish_to_shopify(printify_product_id)
+        # Step 3 — attach the design image
+        if image_path:
+            await _upload_image_to_shopify(image_path, product_id, client)
 
-    store = os.getenv("SHOPIFY_STORE_URL", "")
-    # Printify gives us the external_id (Shopify product ID) after publish;
-    # it may take a moment to propagate — return the Printify admin URL as fallback
-    shopify_id  = printify_product.get("external", {}).get("id", "")
-    product_url = (
-        f"https://{store}/admin/products/{shopify_id}"
-        if shopify_id and store
-        else f"https://app.printify.com/app/shop/{os.getenv('PRINTIFY_SHOP_ID', '')}/products/{printify_product_id}"
-    )
+    store          = os.getenv("SHOPIFY_STORE_URL", "")
+    product_url    = f"https://{store}/admin/products/{product_id}"
+    storefront_url = f"https://{store}/products/{product['handle']}"
 
     return {
-        "product_id":   printify_product_id,
-        "product_url":  product_url,
-        "title":        title,
-        "description":  description,
-        "model_used":   model_used,
+        "product_id":     product_id,
+        "product_url":    product_url,
+        "storefront_url": storefront_url,
+        "title":          title,
+        "description":    description,
+        "model_used":     model_used,
     }
