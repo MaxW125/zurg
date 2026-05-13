@@ -2,6 +2,7 @@ import os
 import base64
 import httpx
 from agents.llm_client import call_local, call_claude
+from agents.printify_client import upload_image, create_product, get_mockup_urls, download_mockup
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 SHOPIFY_API_VERSION = "2025-01"
@@ -24,8 +25,8 @@ def _shopify_url(path: str) -> str:
     return f"https://{store}/admin/api/{SHOPIFY_API_VERSION}/{path}"
 
 
-async def _upload_image_to_shopify(image_path: str, product_id: int, client: httpx.AsyncClient) -> str:
-    """Read image from disk, base64-encode it, attach to Shopify product. Returns image src URL."""
+async def _attach_image_to_shopify(image_path: str, product_id: int, client: httpx.AsyncClient) -> str:
+    """Base64-encode a local image and attach it to a Shopify product. Returns image src URL."""
     disk_path = os.path.join("frontend", "public", image_path.lstrip("/"))
     with open(disk_path, "rb") as f:
         image_data = base64.b64encode(f.read()).decode("utf-8")
@@ -50,17 +51,18 @@ async def _upload_image_to_shopify(image_path: str, product_id: int, client: htt
 
 async def run_factory(input: dict) -> dict:
     """
-    Publish an approved design directly to Shopify as a draft product listing.
+    Publish an approved design to Shopify.
 
-    Printify is used for mockups and fulfillment — wired separately.
-    This step creates the Shopify listing with the flat design image.
+    Pipeline:
+      1. Write product description (Ollama → Claude fallback)
+      2. Upload flat design to Printify → create product → wait for mockup
+      3. Download mockup image, save alongside the flat design
+      4. Create Shopify draft listing with the mockup image
+         (falls back to flat design if Printify mockup generation fails)
 
     Input keys:
-      - image_path: web path to the design image
-      - niche: niche name
-      - product_type: e.g. "Unisex T-Shirt"
-      - image_prompt: used to write the description
-      - keywords: list of tags
+      - image_path: web path to the flat design (e.g. /assets/generated/foo.png)
+      - niche, product_type, image_prompt, keywords
 
     Returns:
       - product_id, product_url, storefront_url, title, model_used
@@ -69,7 +71,7 @@ async def run_factory(input: dict) -> dict:
     product_type = input.get("product_type", "Unisex T-Shirt")
     image_path   = input.get("image_path", "")
 
-    # Step 1 — write product description via Ollama (fall back to Claude)
+    # Step 1 — write product description
     desc_prompt = f"""Write a product description for a {product_type} in the "{niche}" niche.
 Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
 
@@ -82,7 +84,40 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
 
     title = f"{niche} — {product_type}"
 
-    # Step 2 — create the Shopify product as a draft
+    # Step 2 — get Printify mockup (best-effort; falls back to flat design)
+    listing_image_path = image_path  # default: use flat design
+    printify_product_id = None
+
+    printify_token = os.getenv("PRINTIFY_API_TOKEN", "")
+    if printify_token and image_path:
+        try:
+            disk_path = os.path.join("frontend", "public", image_path.lstrip("/"))
+            filename  = os.path.basename(disk_path)
+
+            image_id = await upload_image(disk_path, filename)
+            printify_product = await create_product(
+                title=title,
+                description=description,
+                image_id=image_id,
+                tags=input.get("keywords", []),
+            )
+            printify_product_id = printify_product["id"]
+
+            # Poll for mockup (up to 45s)
+            mockup_urls = await get_mockup_urls(printify_product_id)
+            if mockup_urls:
+                # Save mockup next to the flat design
+                flat_name    = os.path.splitext(os.path.basename(disk_path))[0]
+                mockup_name  = f"{flat_name}_mockup.png"
+                mockup_dir   = os.path.dirname(disk_path)
+                mockup_disk  = os.path.join(mockup_dir, mockup_name)
+                await download_mockup(mockup_urls[0], mockup_disk)
+                listing_image_path = f"/assets/generated/{mockup_name}"
+        except Exception:
+            # Printify failed — silently fall back to flat design
+            listing_image_path = image_path
+
+    # Step 3 — create Shopify draft listing
     product_payload = {
         "product": {
             "title": title,
@@ -110,19 +145,20 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
         product    = r.json()["product"]
         product_id = product["id"]
 
-        # Step 3 — attach the design image
-        if image_path:
-            await _upload_image_to_shopify(image_path, product_id, client)
+        if listing_image_path:
+            await _attach_image_to_shopify(listing_image_path, product_id, client)
 
     store          = os.getenv("SHOPIFY_STORE_URL", "")
     product_url    = f"https://{store}/admin/products/{product_id}"
     storefront_url = f"https://{store}/products/{product['handle']}"
 
     return {
-        "product_id":     product_id,
-        "product_url":    product_url,
-        "storefront_url": storefront_url,
-        "title":          title,
-        "description":    description,
-        "model_used":     model_used,
+        "product_id":          product_id,
+        "product_url":         product_url,
+        "storefront_url":      storefront_url,
+        "title":               title,
+        "description":         description,
+        "model_used":          model_used,
+        "printify_product_id": printify_product_id,
+        "mockup_used":         listing_image_path != image_path,
     }

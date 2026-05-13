@@ -2,18 +2,23 @@
 Printify API client for Zurg.
 
 Handles:
-  - Blueprint/variant lookup (what products Printify can print)
-  - Product creation with uploaded design image
-  - Shopify publish after product is created on Printify
+  - Blueprint/variant lookup
+  - Design image upload
+  - Product creation (triggers mockup generation)
+  - Mockup image polling + download
+  - Shopify publish (optional — only if using Printify as fulfillment backend)
+
+The API itself is FREE. Cost only applies when orders are fulfilled.
 
 Env vars required:
-  PRINTIFY_API_TOKEN  — from Printify account settings
-  PRINTIFY_SHOP_ID    — numeric shop ID (shown in Printify dashboard URL)
+  PRINTIFY_API_TOKEN   — from printify.com → Account → Connections
+  PRINTIFY_SHOP_ID     — numeric ID from printify.com dashboard URL
 
 Printify API docs: https://developers.printify.com/
 """
 
 import os
+import asyncio
 import base64
 import httpx
 
@@ -151,6 +156,42 @@ async def create_product(
         )
         r.raise_for_status()
         return r.json()
+
+
+async def get_mockup_urls(printify_product_id: str, max_wait: int = 45) -> list[str]:
+    """
+    Poll a Printify product until mockup images are generated, then return their URLs.
+
+    Mockup generation is async on Printify's side — usually takes 5-20 seconds.
+    Polls every 3 seconds up to max_wait seconds before giving up.
+
+    Returns a list of CDN image URLs (first is the primary front mockup).
+    """
+    deadline = asyncio.get_event_loop().time() + max_wait
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        while asyncio.get_event_loop().time() < deadline:
+            r = await client.get(
+                f"{PRINTIFY_BASE}/shops/{_shop_id()}/products/{printify_product_id}.json",
+                headers=_headers(),
+            )
+            r.raise_for_status()
+            product = r.json()
+            urls = [img["src"] for img in product.get("images", []) if img.get("src")]
+            if urls:
+                return urls
+            await asyncio.sleep(3)
+
+    return []
+
+
+async def download_mockup(url: str, save_path: str) -> None:
+    """Download a Printify CDN mockup image to a local file path."""
+    async with httpx.AsyncClient(timeout=60, follow_redirects=True) as client:
+        r = await client.get(url)
+        r.raise_for_status()
+        with open(save_path, "wb") as f:
+            f.write(r.content)
 
 
 async def publish_to_shopify(printify_product_id: str) -> dict:
