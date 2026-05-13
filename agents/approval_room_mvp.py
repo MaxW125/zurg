@@ -14,6 +14,18 @@ Rules:
 - If you have no verdict history yet, say so and note that you're learning
 - Output 2-3 sentences maximum"""
 
+AUTO_DECIDE_SYSTEM = """You are the Approval Agent for a print-on-demand business operating in autonomous mode.
+You must make a binary approve/reject decision on each design based on the owner's taste history.
+
+Rules:
+- Study the verdict history carefully — approve designs similar to past approvals, reject those similar to past rejections
+- With no history, approve by default (owner can always reject manually later)
+- Be decisive — no hedging
+- Output MUST start with exactly one of these lines:
+  DECISION: APPROVE
+  DECISION: REJECT
+- Follow immediately with REASONING: and 1-2 sentences explaining your decision"""
+
 
 def _load_verdict_history() -> list[dict]:
     """Load all verdict files from brain/approvals/."""
@@ -102,5 +114,52 @@ async def analyze_design(design: dict) -> dict:
         "analysis": analysis,
         "verdict_count": verdict_count,
         "phase": phase,
+        "model_used": model_used,
+    }
+
+
+async def auto_decide(design: dict) -> dict:
+    """
+    Autonomous mode: agent makes the approve/reject call without owner input.
+    Parses a structured DECISION: APPROVE/REJECT response from the LLM.
+
+    Returns:
+      - approved: bool
+      - reasoning: the agent's explanation
+      - verdict_count: how many past verdicts informed the decision
+      - model_used
+    """
+    verdicts = _load_verdict_history()
+    verdict_count = len(verdicts)
+
+    prompt = _build_analysis_prompt(design, verdicts).replace(
+        "Give a 2-3 sentence assessment. Be specific. Reference past verdicts if relevant.",
+        "Make an approve/reject decision. Start with DECISION: APPROVE or DECISION: REJECT, "
+        "then REASONING: followed by 1-2 sentences.",
+    )
+
+    model_used = "ollama"
+    try:
+        raw = await call_local(prompt, system=AUTO_DECIDE_SYSTEM)
+    except Exception:
+        model_used = "claude"
+        raw = await call_claude(prompt, system=AUTO_DECIDE_SYSTEM)
+
+    # Parse structured output
+    approved = True  # default to approve if parsing fails
+    reasoning = raw.strip()
+
+    for line in raw.splitlines():
+        line = line.strip()
+        if line.upper().startswith("DECISION:"):
+            decision_word = line.split(":", 1)[1].strip().upper()
+            approved = decision_word == "APPROVE"
+        if line.upper().startswith("REASONING:"):
+            reasoning = line.split(":", 1)[1].strip()
+
+    return {
+        "approved": approved,
+        "reasoning": reasoning,
+        "verdict_count": verdict_count,
         "model_used": model_used,
     }

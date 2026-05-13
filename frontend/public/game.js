@@ -1,11 +1,12 @@
 // ── State ──────────────────────────────────────────────────────
 const state = {
-  activeRoom:  null,
-  brief:       null,   // from Researcher
-  design:      null,   // from Designer
-  product:     null,   // from Factory (after approval)
-  chatHistory: [],
-  loading:     false,
+  activeRoom:   null,
+  brief:        null,   // from Researcher
+  design:       null,   // from Designer
+  product:      null,   // from Factory (after approval)
+  chatHistory:  [],
+  loading:      false,
+  autoApproval: localStorage.getItem('autoApproval') === 'true',
 };
 
 const API = '';  // same origin — server on port 9000 serves both UI and API
@@ -304,6 +305,12 @@ function renderFactory(body) {
     </div>`;
 }
 
+function toggleAutoApproval() {
+  state.autoApproval = !state.autoApproval;
+  localStorage.setItem('autoApproval', state.autoApproval);
+  renderPanel('approval');
+}
+
 // ── Approval Panel ─────────────────────────────────────────────
 async function renderApproval(body) {
   const hasDesign  = state.design?.image_path;
@@ -324,11 +331,23 @@ async function renderApproval(body) {
       ${v.approved ? '✓ APPROVED' : '✕ REJECTED'} — ${escHtml(v.niche)} — ${escHtml(v.date)}
     </div>`).join('');
 
+  const modeLabel  = state.autoApproval ? 'AUTO — AGENT DECIDES' : 'MANUAL — YOU DECIDE';
+  const modeBtnTxt = state.autoApproval ? '⚡ AUTO' : '👤 MANUAL';
+  const modeBtnStyle = state.autoApproval
+    ? 'background:#005929;color:#00ff88;border:2px solid #00994d'
+    : 'background:#2d1060;color:#a855f7;border:2px solid #7c3aed';
+
   const statsHtml = `
     <div class="panel-section">
-      <div class="panel-section-title">▶ APPROVAL ENGINE — PHASE ${phase}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="panel-section-title" style="margin-bottom:0">▶ APPROVAL ENGINE — PHASE ${phase}</div>
+        <button onclick="toggleAutoApproval()"
+                style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;${modeBtnStyle}">
+          ${modeBtnTxt}
+        </button>
+      </div>
+      <div class="brief-field">MODE: <span>${modeLabel}</span></div>
       <div class="brief-field">VERDICTS COLLECTED: <span>${verdictCount} / 100</span></div>
-      <div class="brief-field">STATUS: <span>${phase === 1 ? 'OWNER REVIEW (YOU DECIDE)' : phase === 2 ? 'AI-ASSISTED' : 'AUTONOMOUS'}</span></div>
       ${historyHtml ? `<div class="verdict-history">${historyHtml}</div>` : ''}
     </div>`;
 
@@ -354,6 +373,56 @@ async function renderApproval(body) {
     return;
   }
 
+  // ── Auto mode: agent decides immediately ──
+  if (state.autoApproval) {
+    body.innerHTML = `
+      <div class="room-panel">
+        ${statsHtml}
+        <div class="panel-section" style="border-color:#00994d">
+          <div class="panel-section-title" style="color:var(--green)">▶ DESIGN IN QUEUE</div>
+          <img class="design-preview" src="${escHtml(state.design.image_path)}" alt="Design">
+          <div class="brief-field">NICHE: <span>${escHtml(state.design.niche)}</span></div>
+          <div class="brief-field">PRODUCT: <span>${escHtml(state.design.product_type)}</span></div>
+          <div id="auto-status">
+            <div class="loading-row"><div class="spinner"></div> AGENT DECIDING...</div>
+          </div>
+        </div>
+      </div>`;
+
+    const payload = { approved: true, ...state.brief, ...state.design };
+    fetch(`${API}/api/approval/auto-decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(r => r.json())
+      .then(data => {
+        const el = document.getElementById('auto-status');
+        if (!el) return;
+        if (data.approved) {
+          state.product = data.product;
+          el.innerHTML = `
+            <div class="verdict-entry approved">⚡ AGENT APPROVED — PUBLISHED TO SHOPIFY</div>
+            <div style="font-size:7px;line-height:2;color:var(--text);margin-top:8px">${escHtml(data.reasoning || '')}</div>
+            <br><button class="btn btn-yellow" onclick="resetPipeline()">▶ START NEW PIPELINE</button>`;
+          toast('AGENT APPROVED + PUBLISHED.');
+        } else {
+          state.design = null;
+          el.innerHTML = `
+            <div class="verdict-entry rejected">✕ AGENT REJECTED</div>
+            <div style="font-size:7px;line-height:2;color:var(--text);margin-top:8px">${escHtml(data.reasoning || '')}</div>
+            <br><button class="btn btn-purple" onclick="closePanel()">▶ GENERATE ANOTHER DESIGN</button>`;
+          toast('AGENT REJECTED — GENERATE A NEW DESIGN.');
+        }
+      })
+      .catch(e => {
+        const el = document.getElementById('auto-status');
+        if (el) el.innerHTML = `<div class="empty-state">ERROR: ${escHtml(e.message)}</div>`;
+      });
+    return;
+  }
+
+  // ── Manual mode: owner reviews ──
   body.innerHTML = `
     <div class="room-panel">
       ${statsHtml}
@@ -377,7 +446,7 @@ async function renderApproval(body) {
       </div>
     </div>`;
 
-  // Fetch Approval Agent analysis in background
+  // Fetch analysis in background
   fetch(`${API}/api/approval/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

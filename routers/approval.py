@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from agents.factory_room_mvp import run_factory
-from agents.approval_room_mvp import analyze_design
+from agents.approval_room_mvp import analyze_design, auto_decide
 
 router = APIRouter(prefix="/api/approval")
 
@@ -89,6 +89,47 @@ def _load_verdicts() -> list[dict]:
             continue
 
     return verdicts
+
+
+@router.post("/auto-decide")
+async def auto_decide_approval(body: ApprovalDecision):
+    """
+    Autonomous mode: agent makes the approve/reject call, saves the verdict,
+    and publishes to Shopify if approved — no owner input required.
+    """
+    result = await auto_decide(body.model_dump())
+
+    # Build a full decision with agent reasoning as feedback
+    decision = ApprovalDecision(
+        approved=result["approved"],
+        feedback=f"[AUTO] {result['reasoning']}",
+        niche=body.niche,
+        product_type=body.product_type,
+        image_path=body.image_path,
+        image_prompt=body.image_prompt,
+        keywords=body.keywords,
+        design_direction=body.design_direction,
+    )
+    _save_verdict(decision)
+
+    if not result["approved"]:
+        return {
+            "approved": False,
+            "reasoning": result["reasoning"],
+            "message": "Agent rejected this design.",
+        }
+
+    if not body.image_path:
+        raise HTTPException(status_code=400, detail="image_path is required to publish")
+
+    product = await run_factory(body.model_dump())
+
+    return {
+        "approved": True,
+        "reasoning": result["reasoning"],
+        "message": f"Agent approved and published: {product['title']}",
+        "product": product,
+    }
 
 
 @router.post("/analyze")
