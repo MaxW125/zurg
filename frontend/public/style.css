@@ -115,10 +115,10 @@ header {
 #map {
   z-index: 1;
   display: grid;
-  grid-template-columns: 1024px 1024px;
-  grid-template-rows: 1024px 1024px;
-  width: 2048px;
-  height: 2048px;
+  grid-template-columns: repeat(4, 1024px);
+  grid-template-rows: repeat(4, 1024px);
+  width: 4096px;
+  height: 4096px;
   transform-origin: 0 0;
   position: absolute;
   top: 0;
@@ -180,6 +180,53 @@ header {
 @keyframes factory-glow {
   0%, 100% { filter: drop-shadow(0 0 8px var(--purple)); }
   50%       { filter: drop-shadow(0 0 20px var(--purple-lt)); }
+}
+
+/* Approval room */
+.approval-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(45deg, #0a1a0e 0px, #0a1a0e 20px, #061209 20px, #061209 22px),
+    repeating-linear-gradient(-45deg, #0a1a0e 0px, #0a1a0e 20px, #061209 20px, #061209 22px);
+  background-blend-mode: multiply;
+}
+
+.approval-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  font-size: 48px;
+  filter: drop-shadow(0 0 12px var(--green));
+  animation: approval-glow 3s ease-in-out infinite;
+  cursor: pointer;
+  z-index: 2;
+}
+
+@keyframes approval-glow {
+  0%, 100% { filter: drop-shadow(0 0 8px #00994d); }
+  50%       { filter: drop-shadow(0 0 20px var(--green)); }
+}
+
+/* Coming-soon placeholder rooms */
+.room-coming-soon {
+  position: absolute;
+  inset: 0;
+  background: #07040f;
+  border: 1px dashed #1a0a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.room-coming-soon-text {
+  font-size: 7px;
+  color: #1f1040;
+  letter-spacing: 2px;
+  text-align: center;
+  line-height: 2;
+  user-select: none;
 }
 
 /* Room labels */
@@ -484,6 +531,49 @@ header {
   text-align: center;
   padding: 16px;
   line-height: 2.4;
+}
+
+.feedback-input {
+  width: 100%;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  background: #0a0618;
+  border: 2px solid var(--purple);
+  color: var(--text);
+  padding: 8px;
+  outline: none;
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.8;
+  margin-bottom: 10px;
+}
+
+.feedback-input:focus { border-color: var(--purple-lt); }
+
+.verdict-history {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.verdict-entry {
+  font-size: 6px;
+  padding: 6px 8px;
+  border: 1px solid;
+  line-height: 1.8;
+}
+
+.verdict-entry.approved {
+  border-color: #00994d;
+  background: #0a1a0e;
+  color: var(--green);
+}
+
+.verdict-entry.rejected {
+  border-color: #7a0f1a;
+  background: #1a0609;
+  color: var(--red);
 }
 
 /* ── Spinner ── */

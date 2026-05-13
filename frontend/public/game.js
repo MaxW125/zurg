@@ -25,6 +25,7 @@ function openPanel(room) {
     research: '🔍 RESEARCH ROOM',
     design:   '🎨 DESIGN ROOM',
     factory:  '🏭 FACTORY ROOM',
+    approval: '⚖️ APPROVAL ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -40,7 +41,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -269,9 +270,8 @@ async function runDesign() {
   state.loading = false;
 }
 
-// ── Factory Panel (Approval Gate) ──────────────────────────────
+// ── Factory Panel (Published Products Status) ─────────────────
 function renderFactory(body) {
-  const hasDesign = state.design?.image_path;
   const hasProduct = state.product?.product_url;
 
   if (hasProduct) {
@@ -290,42 +290,135 @@ function renderFactory(body) {
     return;
   }
 
+  const pendingMsg = state.design?.image_path
+    ? 'DESIGN AWAITING APPROVAL.<br><br>OPEN THE APPROVAL ROOM TO REVIEW IT.'
+    : 'NOTHING IN THE QUEUE.<br><br>RUN RESEARCH → DESIGN → APPROVAL.';
+
+  body.innerHTML = `
+    <div class="room-panel">
+      <div class="panel-section">
+        <div class="panel-section-title">▶ FACTORY STATUS</div>
+        <div class="empty-state">${pendingMsg}</div>
+        ${state.design?.image_path ? `<button class="btn btn-purple" onclick="closePanel(); setTimeout(() => openPanel('approval'), 50)">▶ GO TO APPROVAL ROOM</button>` : ''}
+      </div>
+    </div>`;
+}
+
+// ── Approval Panel ─────────────────────────────────────────────
+async function renderApproval(body) {
+  const hasDesign  = state.design?.image_path;
+  const hasProduct = state.product?.product_url;
+
+  // Load verdict history for context
+  let verdicts = [];
+  try {
+    const res = await fetch(`${API}/api/approval/verdicts`);
+    if (res.ok) verdicts = await res.json();
+  } catch (_) {}
+
+  const verdictCount = verdicts.length;
+  const phase = verdictCount < 100 ? 1 : verdictCount < 200 ? 2 : 3;
+
+  const historyHtml = verdicts.slice(-3).reverse().map(v => `
+    <div class="verdict-entry ${v.approved ? 'approved' : 'rejected'}">
+      ${v.approved ? '✓ APPROVED' : '✕ REJECTED'} — ${escHtml(v.niche)} — ${escHtml(v.date)}
+    </div>`).join('');
+
+  const statsHtml = `
+    <div class="panel-section">
+      <div class="panel-section-title">▶ APPROVAL ENGINE — PHASE ${phase}</div>
+      <div class="brief-field">VERDICTS COLLECTED: <span>${verdictCount} / 100</span></div>
+      <div class="brief-field">STATUS: <span>${phase === 1 ? 'OWNER REVIEW (YOU DECIDE)' : phase === 2 ? 'AI-ASSISTED' : 'AUTONOMOUS'}</span></div>
+      ${historyHtml ? `<div class="verdict-history">${historyHtml}</div>` : ''}
+    </div>`;
+
+  if (hasProduct) {
+    body.innerHTML = `
+      <div class="room-panel">
+        ${statsHtml}
+        <div class="panel-section">
+          <div class="panel-section-title">▶ LAST DESIGN APPROVED</div>
+          <div class="empty-state">PUBLISHED TO SHOPIFY. PIPELINE COMPLETE.<br><br>START A NEW ONE FROM RESEARCH.</div>
+          <button class="btn btn-yellow" onclick="resetPipeline()">▶ START NEW PIPELINE</button>
+        </div>
+      </div>`;
+    return;
+  }
+
   if (!hasDesign) {
-    body.innerHTML = `<div class="empty-state">NO DESIGN AWAITING APPROVAL.<br><br>RUN RESEARCH → DESIGN FIRST.</div>`;
+    body.innerHTML = `
+      <div class="room-panel">
+        ${statsHtml}
+        <div class="empty-state">NO DESIGN IN QUEUE.<br><br>RUN RESEARCH → DESIGN FIRST.</div>
+      </div>`;
     return;
   }
 
   body.innerHTML = `
     <div class="room-panel">
+      ${statsHtml}
       <div class="panel-section">
-        <div class="panel-section-title">▶ APPROVE THIS DESIGN?</div>
+        <div class="panel-section-title">▶ DESIGN AWAITING YOUR VERDICT</div>
         <img class="design-preview" src="${escHtml(state.design.image_path)}" alt="Design">
         <div class="brief-field">NICHE: <span>${escHtml(state.design.niche)}</span></div>
         <div class="brief-field">PRODUCT: <span>${escHtml(state.design.product_type)}</span></div>
-        <div id="factory-status"></div>
+        <div id="agent-analysis" class="panel-section" style="border-color:#00994d">
+          <div class="panel-section-title" style="color:var(--green)">▶ APPROVAL AGENT ANALYSIS</div>
+          <div class="loading-row"><div class="spinner"></div> ANALYZING...</div>
+        </div>
+        <div class="panel-section-title" style="margin-top:10px">▶ YOUR FEEDBACK (REQUIRED ON REJECT)</div>
+        <textarea id="approval-feedback" class="feedback-input"
+                  placeholder="e.g. Love the vintage style — ship it. / Too generic, needs a unique angle..."></textarea>
+        <div id="approval-status"></div>
         <div class="approval-buttons">
           <button class="btn btn-green" id="approve-btn" onclick="approveDesign()">✓ APPROVE</button>
           <button class="btn btn-red"   id="reject-btn"  onclick="rejectDesign()">✕ REJECT</button>
         </div>
       </div>
     </div>`;
+
+  // Fetch Approval Agent analysis in background
+  fetch(`${API}/api/approval/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      niche: state.design.niche,
+      product_type: state.design.product_type,
+      image_path: state.design.image_path,
+      image_prompt: state.design.image_prompt || '',
+    }),
+  })
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('agent-analysis');
+      if (!el) return;
+      el.innerHTML = `
+        <div class="panel-section-title" style="color:var(--green)">▶ APPROVAL AGENT ANALYSIS</div>
+        <div style="font-size:7px;line-height:2;color:var(--text)">${escHtml(data.analysis || '')}</div>`;
+    })
+    .catch(() => {
+      const el = document.getElementById('agent-analysis');
+      if (el) el.innerHTML = `<div class="panel-section-title" style="color:var(--green)">▶ APPROVAL AGENT ANALYSIS</div><div class="empty-state">AGENT UNAVAILABLE</div>`;
+    });
 }
 
 async function approveDesign() {
   if (state.loading || !state.design) return;
   state.loading = true;
 
-  const statusEl = document.getElementById('factory-status');
-  const appBtn = document.getElementById('approve-btn');
-  const rejBtn = document.getElementById('reject-btn');
+  const feedback = document.getElementById('approval-feedback')?.value.trim() || '';
+  const statusEl = document.getElementById('approval-status');
+  const appBtn   = document.getElementById('approve-btn');
+  const rejBtn   = document.getElementById('reject-btn');
 
-  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> PUBLISHING TO SHOPIFY...</div>`;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> APPROVING — PUBLISHING TO SHOPIFY...</div>`;
   if (appBtn) appBtn.disabled = true;
   if (rejBtn) rejBtn.disabled = true;
 
   try {
     const payload = {
       approved: true,
+      feedback,
       ...state.brief,
       ...state.design,
     };
@@ -336,8 +429,8 @@ async function approveDesign() {
     });
     const data = await res.json();
     state.product = data.product;
-    toast('PUBLISHED! CHECK YOUR SHOPIFY ADMIN.');
-    renderPanel('factory');
+    toast('APPROVED + PUBLISHED! CHECK SHOPIFY ADMIN.');
+    renderPanel('approval');
   } catch (e) {
     if (statusEl) statusEl.innerHTML = `<div class="empty-state">ERROR: ${escHtml(e.message)}</div>`;
     if (appBtn) appBtn.disabled = false;
@@ -347,10 +440,30 @@ async function approveDesign() {
   state.loading = false;
 }
 
-function rejectDesign() {
+async function rejectDesign() {
+  const feedback = document.getElementById('approval-feedback')?.value.trim() || '';
+  if (!feedback) {
+    toast('ADD FEEDBACK BEFORE REJECTING — TEACH THE APPROVAL AGENT.');
+    return;
+  }
+
+  try {
+    const payload = {
+      approved: false,
+      feedback,
+      ...state.brief,
+      ...state.design,
+    };
+    await fetch(`${API}/api/approval/decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch (_) {}
+
   state.design = null;
-  toast('DESIGN REJECTED — GENERATE A NEW ONE IN THE DESIGN ROOM.');
-  renderPanel('factory');
+  toast('REJECTED + LOGGED — GENERATE A NEW DESIGN.');
+  renderPanel('approval');
 }
 
 function resetPipeline() {
@@ -477,12 +590,28 @@ function escHtml(str) {
   const VISIT_MAX    = 20000;
   const VISIT_CHANCE = 0.0002;
 
-  // 2×2 grid of rooms; gx/gy are grid coords
+  // 4×4 grid of rooms; gx/gy are grid coords; built=false rooms are dark placeholders
   const ROOMS = [
-    { cx: 512,  cy: 512,  gx: 0, gy: 0 },  // CEO
-    { cx: 1536, cy: 512,  gx: 1, gy: 0 },  // Research
-    { cx: 512,  cy: 1536, gx: 0, gy: 1 },  // Design
-    { cx: 1536, cy: 1536, gx: 1, gy: 1 },  // Factory
+    // Row 0
+    { cx: 512,  cy: 512,  gx: 0, gy: 0, built: true  },  // CEO
+    { cx: 1536, cy: 512,  gx: 1, gy: 0, built: true  },  // Research
+    { cx: 2560, cy: 512,  gx: 2, gy: 0, built: true  },  // Design
+    { cx: 3584, cy: 512,  gx: 3, gy: 0, built: true  },  // Factory
+    // Row 1
+    { cx: 512,  cy: 1536, gx: 0, gy: 1, built: true  },  // Approval
+    { cx: 1536, cy: 1536, gx: 1, gy: 1, built: false },  // CS
+    { cx: 2560, cy: 1536, gx: 2, gy: 1, built: false },  // Analytics
+    { cx: 3584, cy: 1536, gx: 3, gy: 1, built: false },  // Pricing
+    // Row 2
+    { cx: 512,  cy: 2560, gx: 0, gy: 2, built: false },  // Shop Health
+    { cx: 1536, cy: 2560, gx: 1, gy: 2, built: false },  // Media Bay
+    { cx: 2560, cy: 2560, gx: 2, gy: 2, built: false },  // Monitoring
+    { cx: 3584, cy: 2560, gx: 3, gy: 2, built: false },  // Radar Bay
+    // Row 3
+    { cx: 512,  cy: 3584, gx: 0, gy: 3, built: false },  // Armory
+    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: false },  // War Room
+    { cx: 2560, cy: 3584, gx: 2, gy: 3, built: false },  // Memory Room
+    { cx: 3584, cy: 3584, gx: 3, gy: 3, built: false },  // Treasury
   ];
 
   function cardinalAngle(fx, fy, tx, ty) {
@@ -611,8 +740,8 @@ function escHtml(str) {
         case 'wandering':
           stepCircle(c, now);
           if (Math.random() < VISIT_CHANCE) {
-            const others = ROOMS.filter(r => r !== c.home);
-            startPath(c, others[Math.floor(Math.random() * others.length)]);
+            const others = ROOMS.filter(r => r !== c.home && r.built);
+            if (others.length) startPath(c, others[Math.floor(Math.random() * others.length)]);
           }
           break;
 
@@ -657,7 +786,7 @@ function escHtml(str) {
 (function initMapControls() {
   const viewport = document.getElementById('map-viewport');
   const map      = document.getElementById('map');
-  const MAP_SIZE = 2048;
+  const MAP_SIZE = 4096;
 
   let scale  = 1;
   let panX   = 0;
@@ -685,13 +814,14 @@ function escHtml(str) {
     map.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
   }
 
-  const MIN_SCALE = 0.2;
+  const MIN_SCALE = 0.12;
 
   function fitToViewport() {
     const vw = viewport.clientWidth;
     const vh = viewport.clientHeight;
-    scale = MIN_SCALE;
-    // Center the map in the viewport at min zoom
+    // Auto-fit the full map into viewport with a small margin
+    const fitScale = Math.min(vw, vh) / MAP_SIZE * 0.88;
+    scale = Math.max(MIN_SCALE, Math.min(0.45, fitScale));
     panX = (vw - MAP_SIZE * scale) / 2;
     panY = (vh - MAP_SIZE * scale) / 2;
     applyTransform();
@@ -712,7 +842,7 @@ function escHtml(str) {
     const mouseY = e.clientY - rect.top;
 
     const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    const newScale   = Math.max(0.2, Math.min(0.755, scale * zoomFactor));
+    const newScale   = Math.max(MIN_SCALE, Math.min(0.45, scale * zoomFactor));
 
     // Zoom toward mouse position
     panX = mouseX - (mouseX - panX) * (newScale / scale);
