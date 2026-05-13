@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ZURG — Command Center</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <div id="scanlines"></div>
+
+  <header>
+    <div id="header-title">⚡ ZURG COMMAND CENTER ⚡</div>
+    <div id="header-status">
+      <span id="status-dot"></span>
+      <span id="status-text">ONLINE</span>
+    </div>
+  </header>
+
+  <div id="map-viewport">
+  <canvas id="shooting-stars"></canvas>
+  <div id="map">
+
+    <!-- Captain's Room -->
+    <div class="room" id="room-ceo">
+      <img class="room-bg" src="/assets/zurgs-room.png" alt="Captain's Room" draggable="false">
+      <div class="room-label">CAPTAIN'S ROOM</div>
+      <div class="room-hint">[ CLICK ZURG TO TALK ]</div>
+    </div>
+
+    <!-- Research Room -->
+    <div class="room" id="room-research">
+      <img class="room-bg" src="/assets/research-room.png" alt="Research Room" draggable="false">
+      <div class="room-label">RESEARCH ROOM</div>
+      <div class="room-hint">[ CLICK RESEARCHER TO RUN ]</div>
+    </div>
+
+    <!-- Design Room -->
+    <div class="room" id="room-design">
+      <img class="room-bg" src="/assets/design-room.png" alt="Design Room" draggable="false">
+      <div class="room-label">DESIGN ROOM</div>
+      <div class="room-hint">[ CLICK DESIGNER TO RUN ]</div>
+    </div>
+
+    <!-- Factory Room -->
+    <div class="room" id="room-factory">
+      <div class="factory-bg"></div>
+      <div class="factory-icon" onclick="openPanel('factory')">🏭</div>
+      <div class="room-label">FACTORY ROOM</div>
+      <div class="room-hint">[ CLICK FACTORY TO PUBLISH ]</div>
+    </div>
+
+    <!-- Sprites live on #map so they can roam across rooms -->
+    <canvas id="sprite-zurg" width="160" height="160" onclick="openPanel('ceo')"></canvas>
+    <img class="sprite-char" id="sprite-researcher" src="/assets/researcher-sprite.png" alt="Researcher" draggable="false" onclick="openPanel('research')">
+    <img class="sprite-char" id="sprite-designer" src="/assets/designer-sprite.png" alt="Designer" draggable="false" onclick="openPanel('design')">
+
+  </div><!-- end #map -->
+  </div><!-- end #map-viewport -->
+
+  <!-- Sliding Panel -->
+  <div id="panel">
+    <div id="panel-header">
+      <span id="panel-title">—</span>
+      <button id="panel-close" onclick="closePanel()">[ ✕ CLOSE ]</button>
+    </div>
+    <div id="panel-body"></div>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast"></div>
+
+  <script src="/game.js"></script>
+</body>
+</html>

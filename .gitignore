@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.DS_Store
+brain/customers/
+brain/hot/chat_history.json
+.openclaw/
+*.log
