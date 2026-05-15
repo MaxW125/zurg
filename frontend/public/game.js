@@ -753,7 +753,7 @@ function _renderAnalyticsBody(body) {
       <div class="panel-section">
         <div class="panel-section-title" style="color:var(--yellow)">▶ AGENT INSIGHTS</div>
         <div style="font-size:7px;line-height:2;color:var(--text);white-space:pre-wrap">${escHtml(r.insights || '')}</div>
-        <div style="font-size:6px;color:var(--text-dim);margin-top:8px">MODEL: ${escHtml(r.model_used || '—')} &nbsp;|&nbsp; REPORT DATE: ${escHtml(r.report_date || '—')}</div>
+        <div style="font-size:6px;color:var(--text-dim);margin-top:8px">MODEL: ${escHtml(r.model_used || '—')} &nbsp;|&nbsp; DATA AS OF: ${escHtml(r.report_date || '—')}</div>
       </div>
     </div>`;
 }
