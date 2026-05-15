@@ -257,7 +257,7 @@ async def run_analytics() -> dict:
         products = await _fetch_shopify_products()
     except httpx.HTTPStatusError as e:
         status = e.response.status_code
-        msg = "Shopify token expired — refresh it in brain/hot/shopify-token.md" if status == 401 else f"Shopify API error {status}"
+        msg = "Shopify token expired — refresh it in rooms/captain/shopify-token.md" if status == 401 else f"Shopify API error {status}"
         return {"error": msg, "shopify_error": True}
     except Exception as e:
         return {"error": f"Shopify products fetch failed: {e}", "shopify_error": True}
@@ -266,7 +266,7 @@ async def run_analytics() -> dict:
         orders = await _fetch_shopify_orders()
     except httpx.HTTPStatusError as e:
         status = e.response.status_code
-        msg = "Shopify token expired — refresh it in brain/hot/shopify-token.md" if status == 401 else f"Shopify API error {status}"
+        msg = "Shopify token expired — refresh it in rooms/captain/shopify-token.md" if status == 401 else f"Shopify API error {status}"
         return {"error": msg, "shopify_error": True}
     except Exception as e:
         return {"error": f"Shopify orders fetch failed: {e}", "shopify_error": True}

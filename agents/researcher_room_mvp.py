@@ -10,7 +10,7 @@ from agents.product_catalog import PRODUCT_TYPES
 from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
-CONFIG_PATH = os.path.join(BRAIN_PATH, "hot", "research_config.json")
+CONFIG_PATH = os.path.join(BRAIN_PATH, "rooms", "research", "research_config.json")
 
 _SYSTEM_FALLBACK = """You are a print-on-demand market researcher specialising in graphic apparel. Find niches that sell as t-shirts, hoodies, and printed apparel. Return ONLY a valid JSON object with keys: niche, product_type, target_audience, keywords, design_direction.
 

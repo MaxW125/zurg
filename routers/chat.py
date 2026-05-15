@@ -9,7 +9,7 @@ from agents.ceo_room_mvp import chat_stream, run_ceo
 router = APIRouter(prefix="/api/chat")
 
 BRAIN_PATH   = os.getenv("BRAIN_PATH", "./brain")
-HISTORY_FILE = os.path.join(BRAIN_PATH, "hot", "chat_history.json")
+HISTORY_FILE = os.path.join(BRAIN_PATH, "rooms", "captain", "chat_history.json")
 
 
 def _load_history() -> list:
