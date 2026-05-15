@@ -5,11 +5,12 @@ from agents.llm_client import call_local, call_claude
 from agents.printify_client import upload_image, create_product, get_mockup_urls, download_mockup
 from agents.product_catalog import get_blueprint
 from agents.notify import notify
+from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 SHOPIFY_API_VERSION = "2025-01"
 
-DESCRIPTION_SYSTEM = """You are a Shopify product copywriter for a print-on-demand store.
+_DESCRIPTION_FALLBACK = """You are a Shopify product copywriter for a print-on-demand store.
 Write a short, compelling product description (2-3 sentences max).
 Focus on the niche audience and what makes the design special.
 No fluff. Output only the description text."""
@@ -81,12 +82,13 @@ async def run_factory(input: dict) -> dict:
     desc_prompt = f"""Write a product description for a {product_type} in the "{niche}" niche.
 Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
 
+    description_system = load_system_prompt("factory", "factory", _DESCRIPTION_FALLBACK)
     model_used = "ollama"
     try:
-        description = await call_local(desc_prompt, system=DESCRIPTION_SYSTEM)
+        description = await call_local(desc_prompt, system=description_system)
     except Exception:
         model_used = "claude"
-        description = await call_claude(desc_prompt, system=DESCRIPTION_SYSTEM)
+        description = await call_claude(desc_prompt, system=description_system)
 
     title = f"{niche} — {product_type}"
 

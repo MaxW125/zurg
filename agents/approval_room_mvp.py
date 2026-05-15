@@ -1,10 +1,11 @@
 import os
 import glob
 from agents.llm_client import call_local, call_claude
+from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 
-ANALYSIS_SYSTEM = """You are the Approval Agent for a print-on-demand business.
+_ANALYSIS_FALLBACK = """You are the Approval Agent for a print-on-demand business.
 Your job is to evaluate a design against the owner's taste history and give a brief, honest assessment.
 
 Rules:
@@ -14,7 +15,7 @@ Rules:
 - If you have no verdict history yet, say so and note that you're learning
 - Output 2-3 sentences maximum"""
 
-AUTO_DECIDE_SYSTEM = """You are the Approval Agent for a print-on-demand business operating in autonomous mode.
+_AUTO_DECIDE_FALLBACK = """You are the Approval Agent for a print-on-demand business operating in autonomous mode.
 You must make a binary approve/reject decision on each design based on the owner's taste history.
 
 Rules:
@@ -103,12 +104,13 @@ async def analyze_design(design: dict) -> dict:
     phase = 1 if verdict_count < 100 else (2 if verdict_count < 200 else 3)
 
     prompt = _build_analysis_prompt(design, verdicts)
+    analysis_system = load_system_prompt("approval", "approval", _ANALYSIS_FALLBACK)
     model_used = "ollama"
     try:
-        analysis = await call_local(prompt, system=ANALYSIS_SYSTEM)
+        analysis = await call_local(prompt, system=analysis_system)
     except Exception:
         model_used = "claude"
-        analysis = await call_claude(prompt, system=ANALYSIS_SYSTEM)
+        analysis = await call_claude(prompt, system=analysis_system)
 
     return {
         "analysis": analysis,
@@ -138,12 +140,13 @@ async def auto_decide(design: dict) -> dict:
         "then REASONING: followed by 1-2 sentences.",
     )
 
+    auto_decide_system = load_system_prompt("approval", "approval", _AUTO_DECIDE_FALLBACK)
     model_used = "ollama"
     try:
-        raw = await call_local(prompt, system=AUTO_DECIDE_SYSTEM)
+        raw = await call_local(prompt, system=auto_decide_system)
     except Exception:
         model_used = "claude"
-        raw = await call_claude(prompt, system=AUTO_DECIDE_SYSTEM)
+        raw = await call_claude(prompt, system=auto_decide_system)
 
     # Parse structured output
     approved = True  # default to approve if parsing fails

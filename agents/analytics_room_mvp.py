@@ -3,13 +3,14 @@ import json
 import glob
 from datetime import datetime
 from agents.llm_client import call_local, call_claude
+from agents.brain import load_system_prompt
 import httpx
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 ANALYTICS_DIR = os.path.join(BRAIN_PATH, "analytics")
 SHOPIFY_API_VERSION = "2025-01"
 
-ANALYSIS_SYSTEM = """You are the Analytics Agent for a print-on-demand Shopify store.
+_ANALYSIS_FALLBACK = """You are the Analytics Agent for a print-on-demand Shopify store.
 Analyze the provided store and pipeline data and generate a concise report.
 Focus on:
 - What's performing well (active products, revenue, niches)
@@ -178,11 +179,12 @@ Generate a concise analytics report with:
 2. Concerns (what needs attention)
 3. Top 2-3 recommendations{"4. Changes since last report (call out key deltas)" if previous else ""}"""
 
+    analysis_system = load_system_prompt("analytics", "analyst", _ANALYSIS_FALLBACK)
     try:
-        text = await call_local(prompt, system=ANALYSIS_SYSTEM)
+        text = await call_local(prompt, system=analysis_system)
         return text, "ollama"
     except Exception:
-        text = await call_claude(prompt, system=ANALYSIS_SYSTEM)
+        text = await call_claude(prompt, system=analysis_system)
         return text, "claude"
 
 
