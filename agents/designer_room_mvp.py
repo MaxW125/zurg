@@ -5,11 +5,12 @@ from google import genai
 from google.genai import types
 from rembg import remove as rembg_remove
 from agents.llm_client import call_local, call_claude
+from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 IMAGEN_MODEL = "imagen-4.0-fast-generate-001"
 
-PROMPT_SYSTEM = """You are a print-on-demand product designer. Given a niche research brief, you write a detailed image generation prompt for apparel and product designs.
+_PROMPT_FALLBACK = """You are a print-on-demand product designer. Given a niche research brief, you write a detailed image generation prompt for apparel and product designs.
 
 Rules:
 - Output ONLY the artwork itself — never show a shirt, clothing, mannequin, model, hanger, or any product mockup
@@ -65,12 +66,13 @@ async def run_designer(input: dict) -> dict:
     """
     # Step 1 — build image prompt via Ollama (fall back to Claude)
     prompt_request = _build_prompt_request(input)
+    system = load_system_prompt("design", "designer", _PROMPT_FALLBACK)
     model_used = "ollama"
     try:
-        raw_response = await call_local(prompt_request, system=PROMPT_SYSTEM)
+        raw_response = await call_local(prompt_request, system=system)
     except Exception:
         model_used = "claude"
-        raw_response = await call_claude(prompt_request, system=PROMPT_SYSTEM)
+        raw_response = await call_claude(prompt_request, system=system)
 
     # Parse shirt color recommendation from last line
     shirt_color = "black"
