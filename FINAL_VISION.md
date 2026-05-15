@@ -33,7 +33,7 @@ The core pipeline is live and working end-to-end.
 - Image generation: Google Imagen 4 Fast (imagen-4.0-fast-generate-001)
 - Storefront: Shopify Admin REST API 2025-01 (shpat_ token, expires 24hrs)
 - Messaging: OpenClaw → WhatsApp (disabled in dev, re-enable when real SIM is ready)
-- Brain: flat markdown in `brain/hot/` and `brain/warm/`
+- Brain: Obsidian vault at `~/Desktop/Obsidian Vaults/Zurg/` (BRAIN_PATH in .env)
 - Server: FastAPI on port 9000 (port 8000 reserved for OpenClaw)
 
 ---
@@ -48,7 +48,7 @@ The core pipeline is live and working end-to-end.
 | Factory Room | Factory Agent | ✅ Built | Printify product creation, Shopify publishing, fulfillment monitoring |
 | Approval Room | Approval Agent | ✅ Built | Learns owner taste, predicts approvals, earns autonomous authority |
 | Customer Service Room | CS Agent | 🔲 Not built | Handles Shopify customer messages, order issues, review requests |
-| Analytics Room | Analyst | 🔲 Not built | Weekly performance reports, revenue tracking, trend detection |
+| Analytics Room | Analyst | ✅ Built | Live Shopify product/order data, pipeline metrics, delta comparison, LLM insights, midnight cron |
 | Pricing Room | Pricing Agent | 🔲 Not built | Competitor price monitoring, dynamic repricing, margin protection |
 | Shop Health Room | Shop Agent | 🔲 Not built | Listing health, SEO refresh, stale listing detection |
 | Media Bay | Media Agent | 🔲 Not built | TikTok/Instagram content creation, Publer scheduling |
@@ -115,20 +115,37 @@ Research Room (on CEO instruction, max 2x/day)
 ## Brain Architecture
 
 ```
-/brain (BRAIN_PATH — points to Obsidian vault in production)
-    /hot          ← Always in context: identity, shopify token, chat history
-        identity.md           — Zurg's personality and rules
-        shopify-token.md      — Token refresh instructions (expires 24hrs)
-        chat_history.json     — Shared message log (browser + WhatsApp)
-    /warm         ← Research briefs, generated design records
-        brief_TIMESTAMP_slug.md  — Niche research outputs
-    /cold         ← Archived: old research, completed campaigns
+~/Desktop/Obsidian Vaults/Zurg/   ← BRAIN_PATH
+    /rooms/
+        /captain/
+            room.md                        — CEO room context
+            chat_history.json              — Shared message log (browser + WhatsApp)
+            shopify-token.md               — Token refresh instructions (expires 24hrs)
+            /agents/zurg/identity.md       — Zurg's personality and rules
+        /research/
+            room.md
+            research_config.json           — Autonomous loop config (delay, daily cap, etc.)
+            /briefs/                       — Research brief outputs (brief_TIMESTAMP_slug.md)
+            /agents/researcher/identity.md
+        /design/
+            room.md
+            /agents/designer/identity.md
+        /factory/
+            room.md
+            /agents/factory/identity.md
+        /approval/
+            room.md
+            /verdicts/                     — Owner verdict training data (verdict_TIMESTAMP_*.md)
+            /agents/approval/identity.md
+        /analytics/
+            room.md
+            /reports/                      — Timestamped analytics reports + latest_report.json
+            /agents/analyst/identity.md
+        ... (10 future rooms, room.md files already written)
     /customers    ← PII-isolated: NEVER git-tracked, NEVER ChromaDB-indexed
-    /war-room     ← Daily synthesis logs
-    /armory       ← Skill index
-    /radar        ← System health proposals
-    /bootstrap    ← First-run record
 ```
+
+**Agent identity system:** All agents load their system prompt via `load_system_prompt(room, agent, fallback)` in `agents/brain.py`. This combines `rooms/<room>/room.md` and `rooms/<room>/agents/<agent>/identity.md` into one system prompt. Edit either file in Obsidian and it takes effect on the next agent run — no code changes needed. Hardcoded fallback strings remain in each agent file as a safety net.
 
 ---
 
@@ -227,7 +244,8 @@ OpenClaw serves three roles:
 - [ ] Add remaining agent rooms one at a time (see table above)
 - [ ] Event-driven character movement (characters react to pipeline events)
 - [ ] OpenClaw cron schedules for autonomous operation
-- [ ] Swap flat brain → ChromaDB-indexed Obsidian vault
+- [x] Swap flat brain → Obsidian vault (BRAIN_PATH wired, all agents writing to vault)
+- [ ] Swap flat brain → ChromaDB-indexed Obsidian vault (ChromaDB layer still pending)
 - [ ] Swap .env secrets → HashiCorp Vault
 - [ ] Enable Approval Engine Phase 2
 - [ ] Wire Everbee real market data — code complete, awaiting Everbee Open API approval

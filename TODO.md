@@ -16,6 +16,12 @@
 - [x] Full auto pipeline — per-room auto toggles chain research → design → approval → Shopify
 - [x] 4×4 map expansion — 16 room grid with 11 placeholder rooms
 - [x] Autonomous researcher loop — configurable daily cap, delay, live DDG market data, auto-triggers designer
+- [x] Analytics Room — live Shopify product/order data, pipeline metrics, LLM insights, delta comparison to previous reports, panel UI
+- [x] Analytics Room midnight cron — auto-runs report daily at midnight via system crontab
+- [x] Obsidian vault as brain — BRAIN_PATH now points at `~/Desktop/Obsidian Vaults/Zurg`; all agents write reports, briefs, and verdicts directly into Obsidian
+- [x] Agent identity system — `agents/brain.py` utility (`load_system_prompt(room, agent, fallback)`) loads room.md + identity.md from vault for all 6 active agents; edit personality in Obsidian, takes effect immediately on next run
+- [x] Vault folder structure — 16 room folders under `rooms/`, each with `room.md` (purpose/pipeline context) and `agents/<name>/identity.md` (personality/rules); identity.md files written for all 6 built agents
+- [x] Vault cleanup — eliminated `hot/` folder; data reorganised into `rooms/` subfolders: `rooms/research/briefs/`, `rooms/approval/verdicts/`, `rooms/analytics/reports/`, `rooms/captain/` (chat history + Shopify token doc)
 
 ---
 
@@ -27,8 +33,14 @@
 
 ### Agent Rooms (build one at a time)
 > Finish each room as completely as possible before moving to the next. Room background images and agent sprites can be skipped.
+> All new rooms must follow the established patterns:
+> - Agent file: `agents/<room>_room_mvp.py` with Ollama → Claude fallback via `agents/llm_client.py`
+> - Router file: `routers/<room>.py` registered in `main.py`
+> - Identity loaded from vault via `load_system_prompt(room, agent, fallback)` in `agents/brain.py`
+> - Room.md + identity.md created in vault at `rooms/<room>/room.md` and `rooms/<room>/agents/<agent>/identity.md`
+> - Panel UI added to `frontend/public/game.js` (render function + openPanel title + runX function)
+> - Room div updated in `frontend/public/index.html` (remove coming-soon, add onclick)
 
-- [ ] Analytics Room — weekly Shopify revenue reports, top niches, trend detection
 - [ ] Pricing Room — competitor price monitoring, dynamic repricing, margin protection
 - [ ] CS Room — handle Shopify customer messages, order issues, review requests
 - [ ] Shop Health Room — listing SEO refresh, stale listing detection
@@ -41,7 +53,7 @@
 - [ ] Treasury — cost tracking per agent, ROI dashboard, spend guardrails
 
 ### Automation
-- [ ] OpenClaw cron schedules — War Room 7am, CEO 8am, Analytics Sunday 11pm, Pricing Monday 6am, Shop Health Wednesday 6am, Radar Tuesday 6am
+- [ ] OpenClaw cron schedules — War Room 7am, CEO 8am, Pricing Monday 6am, Shop Health Wednesday 6am, Radar Tuesday 6am
 - [ ] Event-driven sprite movement — characters react to pipeline events via SSE
 
 ### Approval Engine
@@ -55,6 +67,28 @@
 - [ ] Swap flat brain → ChromaDB-indexed Obsidian vault
 - [ ] Swap .env secrets → HashiCorp Vault
 - [ ] Staging environment with test-mode flags
+
+---
+
+## Key File Locations (for new sessions)
+
+| What | Where |
+|------|-------|
+| Brain / Obsidian vault | `~/Desktop/Obsidian Vaults/Zurg/` |
+| Agent identity files | `rooms/<room>/agents/<agent>/identity.md` inside vault |
+| Room context files | `rooms/<room>/room.md` inside vault |
+| Research briefs | `rooms/research/briefs/brief_*.md` inside vault |
+| Approval verdicts | `rooms/approval/verdicts/verdict_*.md` inside vault |
+| Analytics reports | `rooms/analytics/reports/` inside vault |
+| Researcher loop config | `rooms/research/research_config.json` inside vault |
+| CEO chat history | `rooms/captain/chat_history.json` inside vault |
+| Shopify token refresh doc | `rooms/captain/shopify-token.md` inside vault |
+| BRAIN_PATH env var | `~/zurg/.env` → `BRAIN_PATH=~/Desktop/Obsidian Vaults/Zurg` |
+| System prompt loader | `agents/brain.py` → `load_system_prompt(room, agent, fallback)` |
+| Server | FastAPI on port 9000 — `python main.py` from `~/zurg/` |
+
+## Shopify Token Note
+The `SHOPIFY_ACCESS_TOKEN` in `.env` is an **online token that expires every 24 hours**. When the Factory or Analytics agent returns a 401/403 error, run the refresh command in `rooms/captain/shopify-token.md` inside the vault.
 
 ---
 
