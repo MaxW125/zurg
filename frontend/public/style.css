@@ -214,8 +214,8 @@ header {
   position: absolute;
   inset: 0;
   background:
-    repeating-linear-gradient(0deg, #1a1400 0px, #1a1400 30px, #0d0b00 30px, #0d0b00 32px),
-    repeating-linear-gradient(90deg, #1a1400 0px, #1a1400 30px, #0d0b00 30px, #0d0b00 32px);
+    repeating-linear-gradient(0deg, #1a0a2e 0px, #1a0a2e 30px, #0d0618 30px, #0d0618 32px),
+    repeating-linear-gradient(90deg, #1a0a2e 0px, #1a0a2e 30px, #0d0618 30px, #0d0618 32px);
   background-blend-mode: multiply;
 }
 

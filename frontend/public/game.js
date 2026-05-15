@@ -918,8 +918,8 @@ function escHtml(str) {
     { cx: 3584, cy: 512,  gx: 3, gy: 0, built: true  },  // Factory
     // Row 1
     { cx: 512,  cy: 1536, gx: 0, gy: 1, built: true  },  // Approval
-    { cx: 1536, cy: 1536, gx: 1, gy: 1, built: false },  // CS
-    { cx: 2560, cy: 1536, gx: 2, gy: 1, built: false },  // Analytics
+    { cx: 1536, cy: 1536, gx: 1, gy: 1, built: true  },  // Analytics
+    { cx: 2560, cy: 1536, gx: 2, gy: 1, built: false },  // CS
     { cx: 3584, cy: 1536, gx: 3, gy: 1, built: false },  // Pricing
     // Row 2
     { cx: 512,  cy: 2560, gx: 0, gy: 2, built: false },  // Shop Health
