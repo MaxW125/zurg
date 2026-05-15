@@ -97,6 +97,7 @@ async def create_product(
     blueprint_id: int = DEFAULT_BLUEPRINT_ID,
     print_provider_id: int = DEFAULT_PRINT_PROVIDER,
     tags: list[str] | None = None,
+    preferred_color: str = "black",
 ) -> dict:
     """
     Create a product on Printify with the uploaded design image.
@@ -110,7 +111,29 @@ async def create_product(
     if not variants:
         raise RuntimeError(f"No variants found for blueprint {blueprint_id} / provider {print_provider_id}")
 
-    # Enable all available variants at a fixed price
+    # Variants come back grouped by color (e.g. all "Carolina Blue / S/M/L..." first).
+    # Taking the first 50 naively risks excluding the preferred color entirely.
+    # Fix: group by color, put the preferred color first, then fill to 50.
+    from collections import defaultdict
+    color_groups: dict[str, list] = defaultdict(list)
+    for v in variants:
+        title = v.get("title", "")
+        color_key = title.split(" / ")[0].strip().lower() if " / " in title else title.lower()
+        color_groups[color_key].append(v)
+
+    preferred_key = preferred_color.lower()
+    enabled: list = list(color_groups.get(preferred_key, []))
+    for key, group in color_groups.items():
+        if key != preferred_key:
+            enabled.extend(group)
+            if len(enabled) >= 100:
+                break
+    variants = enabled[:100]
+
+    # Preferred color IDs are the ones we just prioritised — guaranteed in enabled set
+    preferred_variant_ids = [v["id"] for v in color_groups.get(preferred_key, [])]
+    print(f"[PRINTIFY] preferred_color={preferred_color!r}, {len(preferred_variant_ids)} variants in enabled set of {len(variants)}")
+
     variant_list = [
         {
             "id": v["id"],
@@ -155,19 +178,27 @@ async def create_product(
             headers=_headers(),
         )
         r.raise_for_status()
-        return r.json()
+        product = r.json()
+        product["_preferred_variant_ids"] = preferred_variant_ids
+        return product
 
 
-async def get_mockup_urls(printify_product_id: str, max_wait: int = 45) -> list[str]:
+async def get_mockup_urls(
+    printify_product_id: str,
+    max_wait: int = 45,
+    preferred_variant_ids: list[int] | None = None,
+) -> list[str]:
     """
     Poll a Printify product until mockup images are generated, then return their URLs.
 
     Mockup generation is async on Printify's side — usually takes 5-20 seconds.
     Polls every 3 seconds up to max_wait seconds before giving up.
 
-    Returns a list of CDN image URLs (first is the primary front mockup).
+    If preferred_variant_ids is provided, returns URLs for mockups that cover those
+    variants first (e.g. black shirt mockups before other colors).
     """
     deadline = asyncio.get_event_loop().time() + max_wait
+    preferred_set = set(preferred_variant_ids or [])
 
     async with httpx.AsyncClient(timeout=30) as client:
         while asyncio.get_event_loop().time() < deadline:
@@ -176,11 +207,24 @@ async def get_mockup_urls(printify_product_id: str, max_wait: int = 45) -> list[
                 headers=_headers(),
             )
             r.raise_for_status()
-            product = r.json()
-            urls = [img["src"] for img in product.get("images", []) if img.get("src")]
-            if urls:
-                return urls
-            await asyncio.sleep(3)
+            images = r.json().get("images", [])
+            print(f"[PRINTIFY] poll: {len(images)} images, preferred_set size={len(preferred_set)}")
+            if not images:
+                await asyncio.sleep(3)
+                continue
+
+            if preferred_set:
+                preferred = [
+                    img["src"] for img in images
+                    if img.get("src") and preferred_set.intersection(img.get("variant_ids", []))
+                ]
+                print(f"[PRINTIFY] preferred color matches: {len(preferred)}")
+                if preferred:
+                    return preferred
+                # No preferred color match — fall back to all images
+                print(f"[PRINTIFY] no preferred match, returning all {len(images)} images")
+
+            return [img["src"] for img in images if img.get("src")]
 
     return []
 

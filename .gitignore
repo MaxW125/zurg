@@ -4,5 +4,8 @@ __pycache__/
 .DS_Store
 brain/customers/
 brain/hot/chat_history.json
+brain/warm/
+brain/approvals/
 .openclaw/
 *.log
+frontend/public/assets/generated/

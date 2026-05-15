@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from agents.factory_room_mvp import run_factory
 from agents.approval_room_mvp import analyze_design, auto_decide
+from agents.notify import notify
 
 router = APIRouter(prefix="/api/approval")
 
@@ -113,6 +114,7 @@ async def auto_decide_approval(body: ApprovalDecision):
     _save_verdict(decision)
 
     if not result["approved"]:
+        await notify(f"❌ Auto-rejected: {body.niche} {body.product_type}\nReason: {result['reasoning'][:120]}")
         return {
             "approved": False,
             "reasoning": result["reasoning"],

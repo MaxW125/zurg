@@ -1,12 +1,14 @@
 // ── State ──────────────────────────────────────────────────────
 const state = {
-  activeRoom:   null,
-  brief:        null,   // from Researcher
-  design:       null,   // from Designer
-  product:      null,   // from Factory (after approval)
-  chatHistory:  [],
-  loading:      false,
-  autoApproval: localStorage.getItem('autoApproval') === 'true',
+  activeRoom:    null,
+  brief:         null,   // from Researcher
+  design:        null,   // from Designer
+  product:       null,   // from Factory (after approval)
+  chatHistory:   [],
+  loading:       false,
+  autoResearch:  localStorage.getItem('autoResearch')  === 'true',
+  autoDesign:    localStorage.getItem('autoDesign')    === 'true',
+  autoApproval:  localStorage.getItem('autoApproval')  === 'true',
 };
 
 const API = '';  // same origin — server on port 9000 serves both UI and API
@@ -141,13 +143,16 @@ async function sendChat() {
     if (data.intent === 'research' && data.data?.niche) {
       state.brief = data.data;
       toast('RESEARCH COMPLETE — ' + data.data.niche.toUpperCase());
+      if (state.autoDesign) setTimeout(() => runDesign(), 400);
     } else if (data.intent === 'design' && data.data?.image_path) {
       state.design = data.data;
-      toast('DESIGN READY — OPEN FACTORY TO APPROVE');
+      toast('DESIGN READY' + (state.autoApproval ? ' — AUTO-APPROVING...' : ' — OPEN APPROVAL ROOM'));
+      if (state.autoApproval) setTimeout(() => _runAutoApprove(), 400);
     } else if (data.intent === 'pipeline') {
       if (data.data?.brief)      state.brief  = data.data.brief;
       if (data.data?.image_path) state.design = data.data;
-      toast('PIPELINE COMPLETE — REVIEW DESIGN IN FACTORY');
+      toast('PIPELINE COMPLETE — REVIEW DESIGN IN APPROVAL ROOM');
+      if (state.design && state.autoApproval) setTimeout(() => _runAutoApprove(), 400);
     } else if (data.intent === 'publish' && data.data?.product_url) {
       state.product = data.data;
       toast('PUBLISHED TO SHOPIFY');
@@ -163,7 +168,7 @@ async function sendChat() {
 }
 
 // ── Research Panel ─────────────────────────────────────────────
-function renderResearch(body) {
+async function renderResearch(body) {
   const briefHtml = state.brief ? `
     <div class="panel-section">
       <div class="panel-section-title">▶ CURRENT BRIEF</div>
@@ -174,10 +179,48 @@ function renderResearch(body) {
       <div class="brief-field">DESIGN: <span>${escHtml(state.brief.design_direction)}</span></div>
     </div>` : `<div class="empty-state">NO BRIEF YET.<br><br>RUN RESEARCH TO FIND A NICHE.</div>`;
 
+  // Fetch autonomous loop status
+  let loopStatus = null;
+  try {
+    const r = await fetch(`${API}/api/rooms/research/autonomous/status`);
+    if (r.ok) loopStatus = await r.json();
+  } catch (_) {}
+
+  const isRunning = loopStatus?.running;
+  const nextRunMins = loopStatus?.next_run_seconds != null
+    ? Math.ceil(loopStatus.next_run_seconds / 60) : null;
+  const todayCount = loopStatus?.products_today ?? 0;
+  const maxPerDay  = loopStatus?.max_per_day ?? 6;
+
+  const loopStatusLine = isRunning
+    ? `RUNNING — ${nextRunMins != null ? `NEXT RUN IN ${nextRunMins}m` : 'CYCLE IN PROGRESS'}`
+    : 'IDLE';
+  const loopBtnStyle = isRunning
+    ? 'background:#005929;color:#00ff88;border:2px solid #00994d'
+    : 'background:#2d1060;color:#a855f7;border:2px solid #7c3aed';
+  const loopBtnLabel = isRunning ? '⏹ STOP LOOP' : '▶ START LOOP';
+
   body.innerHTML = `
     <div class="room-panel">
+      <div class="panel-section" style="${isRunning ? 'border-color:#00994d' : ''}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="panel-section-title" style="margin-bottom:0">▶ AUTONOMOUS LOOP</div>
+          <button onclick="toggleAutonomousLoop(${isRunning})"
+                  style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;${loopBtnStyle}">
+            ${loopBtnLabel}
+          </button>
+        </div>
+        <div class="brief-field">STATUS: <span style="${isRunning ? 'color:var(--green)' : ''}">${loopStatusLine}</span></div>
+        <div class="brief-field">CADENCE: <span>EVERY ${loopStatus?.delay_minutes ?? 240} MIN</span></div>
+        <div class="brief-field">TODAY: <span>${todayCount} / ${maxPerDay} PRODUCTS</span></div>
+        <div class="brief-field" style="margin-top:4px;font-size:6px;color:#666">SOURCES: GOOGLE TRENDS + WEB SEARCH + OLLAMA</div>
+      </div>
       <div class="panel-section">
-        <div class="panel-section-title">▶ RUN RESEARCH</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="panel-section-title" style="margin-bottom:0">▶ MANUAL RUN</div>
+          ${_autoToggleBtn(state.autoResearch, 'toggleAutoResearch')}
+        </div>
+        <div class="brief-field" style="margin-bottom:8px">MODE: <span>${state.autoResearch ? 'AUTO — CHAINS INTO DESIGN' : 'MANUAL — BRIEF ONLY'}</span></div>
         <div class="direction-row">
           <input id="research-direction" class="text-input" type="text"
                  placeholder="optional direction (e.g. cats, hiking, coffee)...">
@@ -187,6 +230,17 @@ function renderResearch(body) {
       </div>
       ${briefHtml}
     </div>`;
+}
+
+async function toggleAutonomousLoop(isRunning) {
+  const endpoint = isRunning ? '/api/rooms/research/autonomous/stop' : '/api/rooms/research/autonomous/start';
+  try {
+    await fetch(`${API}${endpoint}`, { method: 'POST' });
+    toast(isRunning ? 'AUTONOMOUS LOOP STOPPED.' : '⚡ AUTONOMOUS LOOP STARTED — RESEARCHING EVERY 4H');
+    renderPanel('research');
+  } catch (e) {
+    toast('ERROR: ' + e.message);
+  }
 }
 
 async function runResearch() {
@@ -210,6 +264,10 @@ async function runResearch() {
     state.brief = data;
     toast('RESEARCH COMPLETE — ' + data.niche.toUpperCase());
     renderPanel('research');
+    if (state.autoDesign) {
+      closePanel();
+      setTimeout(() => runDesign(), 400);
+    }
   } catch (e) {
     if (statusEl) statusEl.innerHTML = `<div class="empty-state">ERROR: ${escHtml(e.message)}</div>`;
   }
@@ -220,7 +278,7 @@ async function runResearch() {
 
 // ── Design Panel ───────────────────────────────────────────────
 function renderDesign(body) {
-  const noBrief = !state.brief;
+  const noBrief  = !state.brief;
   const hasImage = state.design?.image_path;
 
   const imageHtml = hasImage ? `
@@ -229,12 +287,17 @@ function renderDesign(body) {
       <img class="design-preview" src="${escHtml(state.design.image_path)}" alt="Design">
       <div class="brief-field">NICHE: <span>${escHtml(state.design.niche)}</span></div>
       <div class="brief-field">PRODUCT: <span>${escHtml(state.design.product_type)}</span></div>
+      ${state.design.shirt_color ? `<div class="brief-field">SHIRT COLOR: <span>${escHtml(state.design.shirt_color)}</span></div>` : ''}
     </div>` : `<div class="empty-state">NO DESIGN YET.<br><br>GENERATE ONE BELOW.</div>`;
 
   body.innerHTML = `
     <div class="room-panel">
       <div class="panel-section">
-        <div class="panel-section-title">▶ GENERATE DESIGN</div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="panel-section-title" style="margin-bottom:0">▶ GENERATE DESIGN</div>
+          ${_autoToggleBtn(state.autoDesign, 'toggleAutoDesign')}
+        </div>
+        <div class="brief-field" style="margin-bottom:8px">MODE: <span>${state.autoDesign ? 'AUTO — RUNS AFTER RESEARCH' : 'MANUAL — YOU TRIGGER'}</span></div>
         ${noBrief ? '<div class="empty-state">RUN RESEARCH FIRST TO GET A BRIEF.</div>' : ''}
         <button class="btn btn-purple" id="design-btn" onclick="runDesign()"
                 ${noBrief ? 'disabled' : ''}>GENERATE ▶</button>
@@ -262,8 +325,11 @@ async function runDesign() {
     });
     const data = await res.json();
     state.design = data;
-    toast('DESIGN READY — GO TO FACTORY TO APPROVE');
+    toast('DESIGN READY' + (state.autoApproval ? ' — AUTO-APPROVING...' : ' — GO TO APPROVAL ROOM'));
     renderPanel('design');
+    if (state.autoApproval) {
+      setTimeout(() => _runAutoApprove(), 400);
+    }
   } catch (e) {
     if (statusEl) statusEl.innerHTML = `<div class="empty-state">ERROR: ${escHtml(e.message)}</div>`;
   }
@@ -305,10 +371,30 @@ function renderFactory(body) {
     </div>`;
 }
 
+function toggleAutoResearch() {
+  state.autoResearch = !state.autoResearch;
+  localStorage.setItem('autoResearch', state.autoResearch);
+  renderPanel('research');
+}
+
+function toggleAutoDesign() {
+  state.autoDesign = !state.autoDesign;
+  localStorage.setItem('autoDesign', state.autoDesign);
+  renderPanel('design');
+}
+
 function toggleAutoApproval() {
   state.autoApproval = !state.autoApproval;
   localStorage.setItem('autoApproval', state.autoApproval);
   renderPanel('approval');
+}
+
+function _autoToggleBtn(isAuto, onToggle) {
+  const style = isAuto
+    ? 'background:#005929;color:#00ff88;border:2px solid #00994d'
+    : 'background:#2d1060;color:#a855f7;border:2px solid #7c3aed';
+  const label = isAuto ? '⚡ AUTO' : '👤 MANUAL';
+  return `<button onclick="${onToggle}()" style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;${style}">${label}</button>`;
 }
 
 // ── Approval Panel ─────────────────────────────────────────────
@@ -535,12 +621,41 @@ async function rejectDesign() {
   renderPanel('approval');
 }
 
+async function _runAutoApprove() {
+  if (!state.design) return;
+  const payload = { approved: true, ...state.brief, ...state.design };
+  try {
+    const res = await fetch(`${API}/api/approval/auto-decide`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (data.approved) {
+      state.product = data.product;
+      toast('⚡ AGENT APPROVED + PUBLISHED TO SHOPIFY');
+    } else {
+      state.design = null;
+      toast('⚡ AGENT REJECTED — GENERATING NEW DESIGN...');
+      if (state.autoDesign) setTimeout(() => runDesign(), 800);
+    }
+    if (state.activeRoom) renderPanel(state.activeRoom);
+  } catch (e) {
+    toast('AUTO-APPROVAL ERROR — CHECK LOGS');
+  }
+}
+
 function resetPipeline() {
   state.brief = null;
   state.design = null;
   state.product = null;
-  toast('PIPELINE RESET — START WITH RESEARCH.');
   closePanel();
+  if (state.autoResearch) {
+    toast('PIPELINE RESET — AUTO-RUNNING RESEARCH...');
+    setTimeout(() => runResearch(), 600);
+  } else {
+    toast('PIPELINE RESET — START WITH RESEARCH.');
+  }
 }
 
 // ── Toast ──────────────────────────────────────────────────────

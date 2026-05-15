@@ -17,7 +17,7 @@ async def call_local(prompt: str, system: str = "") -> str:
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.post(
             f"{OLLAMA_HOST}/api/chat",
-            json={"model": OLLAMA_MODEL, "messages": messages, "stream": False},
+            json={"model": OLLAMA_MODEL, "messages": messages, "stream": False, "options": {"num_ctx": 8192}},
         )
         r.raise_for_status()
         return r.json()["message"]["content"].strip()

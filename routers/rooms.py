@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from agents.researcher_room_mvp import run_researcher
+from agents.researcher_room_mvp import run_researcher, start_loop, stop_loop, loop_status
 from agents.designer_room_mvp import run_designer
 from agents.factory_room_mvp import run_factory
 
@@ -31,6 +31,26 @@ class FactoryInput(BaseModel):
 async def run_research_room(body: ResearchInput):
     """Trigger the Researcher agent directly."""
     return await run_researcher({"direction": body.direction})
+
+
+@router.post("/research/autonomous/start")
+async def start_autonomous():
+    """Start the autonomous research loop."""
+    started = start_loop()
+    return {"started": started, "status": loop_status()}
+
+
+@router.post("/research/autonomous/stop")
+async def stop_autonomous():
+    """Stop the autonomous research loop."""
+    stopped = stop_loop()
+    return {"stopped": stopped, "status": loop_status()}
+
+
+@router.get("/research/autonomous/status")
+async def get_autonomous_status():
+    """Return current autonomous loop status."""
+    return loop_status()
 
 
 @router.post("/design/run")

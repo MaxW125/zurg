@@ -46,7 +46,7 @@ The core pipeline is live and working end-to-end.
 | Research Room | Researcher | ✅ Built | Competitor analysis, niche discovery, keyword research via Everbee |
 | Design Room | Designer | ✅ Built | Generates designs via Imagen/Ideogram, manages design queue |
 | Factory Room | Factory Agent | ✅ Built | Printify product creation, Shopify publishing, fulfillment monitoring |
-| Approval Room | Approval Agent | 🔲 Not built | Learns owner taste, predicts approvals, earns autonomous authority |
+| Approval Room | Approval Agent | ✅ Built | Learns owner taste, predicts approvals, earns autonomous authority |
 | Customer Service Room | CS Agent | 🔲 Not built | Handles Shopify customer messages, order issues, review requests |
 | Analytics Room | Analyst | 🔲 Not built | Weekly performance reports, revenue tracking, trend detection |
 | Pricing Room | Pricing Agent | 🔲 Not built | Competitor price monitoring, dynamic repricing, margin protection |
@@ -134,8 +134,8 @@ Research Room (on CEO instruction, max 2x/day)
 
 ## UI Architecture
 
-- 2048×2048 pixel art map, 4 rooms in a 2×2 grid (each 1024×1024)
-- Zoom/pan with mouse wheel and drag — min scale 0.2, max 0.755
+- 4096×4096 pixel art map, 16 rooms in a 4×4 grid (each 1024×1024), 5 rooms built
+- Zoom/pan with mouse wheel and drag — min scale 0.12, max 0.45
 - Character sprites wander circular paths (radius 260px) centered on each room
 - Cross-room visiting: characters arc to a cardinal exit, walk grid corridors, circle in destination room
 - Clicking a character/icon slides up their control panel from the bottom
@@ -222,7 +222,7 @@ OpenClaw serves three roles:
 - [x] OpenClaw WhatsApp routing wired up
 - [ ] Real SIM for Zurg's WhatsApp number
 - [ ] Factory room background image
-- [ ] Printify integration (mockups + fulfillment)
+- [x] Printify integration (mockups + fulfillment)
 - [ ] Design feedback loop (after 10–20 design cycles)
 - [ ] Add remaining agent rooms one at a time (see table above)
 - [ ] Event-driven character movement (characters react to pipeline events)
@@ -230,9 +230,8 @@ OpenClaw serves three roles:
 - [ ] Swap flat brain → ChromaDB-indexed Obsidian vault
 - [ ] Swap .env secrets → HashiCorp Vault
 - [ ] Enable Approval Engine Phase 2
-- [ ] Wire Everbee real market data
+- [ ] Wire Everbee real market data — code complete, awaiting Everbee Open API approval
 - [ ] Add Radar Bay and Armory for self-improvement
-- [ ] Enable War Room daily ritual
 - [ ] Enable War Room daily ritual
 - [ ] Treasury cost tracking per agent
 

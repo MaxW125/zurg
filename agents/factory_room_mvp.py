@@ -3,6 +3,8 @@ import base64
 import httpx
 from agents.llm_client import call_local, call_claude
 from agents.printify_client import upload_image, create_product, get_mockup_urls, download_mockup
+from agents.product_catalog import get_blueprint
+from agents.notify import notify
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 SHOPIFY_API_VERSION = "2025-01"
@@ -70,6 +72,10 @@ async def run_factory(input: dict) -> dict:
     niche        = input.get("niche", "Custom Design")
     product_type = input.get("product_type", "Unisex T-Shirt")
     image_path   = input.get("image_path", "")
+    # Clamp to black or white — other colors produce unpredictable Printify mockup shades
+    _raw_color   = input.get("shirt_color", "black").lower()
+    shirt_color  = "white" if _raw_color == "white" else "black"
+    blueprint    = get_blueprint(product_type)
 
     # Step 1 — write product description
     desc_prompt = f"""Write a product description for a {product_type} in the "{niche}" niche.
@@ -99,22 +105,25 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
                 title=title,
                 description=description,
                 image_id=image_id,
+                blueprint_id=blueprint["blueprint_id"],
+                print_provider_id=blueprint["print_provider"],
                 tags=input.get("keywords", []),
+                preferred_color=shirt_color,
             )
-            printify_product_id = printify_product["id"]
+            printify_product_id   = printify_product["id"]
+            preferred_variant_ids = printify_product.get("_preferred_variant_ids", [])
 
-            # Poll for mockup (up to 45s)
-            mockup_urls = await get_mockup_urls(printify_product_id)
+            mockup_urls = await get_mockup_urls(printify_product_id, preferred_variant_ids=preferred_variant_ids)
             if mockup_urls:
-                # Save mockup next to the flat design
-                flat_name    = os.path.splitext(os.path.basename(disk_path))[0]
-                mockup_name  = f"{flat_name}_mockup.png"
-                mockup_dir   = os.path.dirname(disk_path)
-                mockup_disk  = os.path.join(mockup_dir, mockup_name)
+                flat_name   = os.path.splitext(os.path.basename(disk_path))[0]
+                mockup_name = f"{flat_name}_mockup.png"
+                mockup_disk = os.path.join(os.path.dirname(disk_path), mockup_name)
                 await download_mockup(mockup_urls[0], mockup_disk)
                 listing_image_path = f"/assets/generated/{mockup_name}"
-        except Exception:
-            # Printify failed — silently fall back to flat design
+        except Exception as e:
+            import traceback
+            print(f"[factory] Printify mockup failed, using flat design: {e}")
+            traceback.print_exc()
             listing_image_path = image_path
 
     # Step 3 — create Shopify draft listing
@@ -151,6 +160,8 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
     store          = os.getenv("SHOPIFY_STORE_URL", "")
     product_url    = f"https://{store}/admin/products/{product_id}"
     storefront_url = f"https://{store}/products/{product['handle']}"
+
+    await notify(f"✅ Published: {title}\n{product_url}")
 
     return {
         "product_id":          product_id,
