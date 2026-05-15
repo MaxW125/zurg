@@ -209,6 +209,33 @@ header {
   50%       { filter: drop-shadow(0 0 20px var(--green)); }
 }
 
+/* Analytics room */
+.analytics-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, #1a1400 0px, #1a1400 30px, #0d0b00 30px, #0d0b00 32px),
+    repeating-linear-gradient(90deg, #1a1400 0px, #1a1400 30px, #0d0b00 30px, #0d0b00 32px);
+  background-blend-mode: multiply;
+}
+
+.analytics-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  font-size: 48px;
+  filter: drop-shadow(0 0 12px var(--yellow));
+  animation: analytics-glow 2.5s ease-in-out infinite;
+  cursor: pointer;
+  z-index: 2;
+}
+
+@keyframes analytics-glow {
+  0%, 100% { filter: drop-shadow(0 0 8px #b8960a); }
+  50%       { filter: drop-shadow(0 0 20px var(--yellow)); }
+}
+
 /* Coming-soon placeholder rooms */
 .room-coming-soon {
   position: absolute;

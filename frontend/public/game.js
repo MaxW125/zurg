@@ -1,14 +1,15 @@
 // ── State ──────────────────────────────────────────────────────
 const state = {
-  activeRoom:    null,
-  brief:         null,   // from Researcher
-  design:        null,   // from Designer
-  product:       null,   // from Factory (after approval)
-  chatHistory:   [],
-  loading:       false,
-  autoResearch:  localStorage.getItem('autoResearch')  === 'true',
-  autoDesign:    localStorage.getItem('autoDesign')    === 'true',
-  autoApproval:  localStorage.getItem('autoApproval')  === 'true',
+  activeRoom:      null,
+  brief:           null,   // from Researcher
+  design:          null,   // from Designer
+  product:         null,   // from Factory (after approval)
+  analyticsReport: null,   // from Analytics Room
+  chatHistory:     [],
+  loading:         false,
+  autoResearch:    localStorage.getItem('autoResearch')  === 'true',
+  autoDesign:      localStorage.getItem('autoDesign')    === 'true',
+  autoApproval:    localStorage.getItem('autoApproval')  === 'true',
 };
 
 const API = '';  // same origin — server on port 9000 serves both UI and API
@@ -29,6 +30,7 @@ function openPanel(room) {
     design:   '🎨 DESIGN ROOM',
     factory:  '🏭 FACTORY ROOM',
     approval: '⚖️ APPROVAL ROOM',
+    analytics: '📊 ANALYTICS ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -44,7 +46,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -656,6 +658,139 @@ function resetPipeline() {
   } else {
     toast('PIPELINE RESET — START WITH RESEARCH.');
   }
+}
+
+// ── Analytics Panel ────────────────────────────────────────────
+async function renderAnalytics(body) {
+  // Show spinner while loading cached report
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING REPORT...</div></div>`;
+
+  try {
+    const res = await fetch(`${API}/api/analytics/status`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.report) state.analyticsReport = data.report;
+    }
+  } catch (_) {}
+
+  _renderAnalyticsBody(body);
+}
+
+function _deltaSpan(delta, reverseColor) {
+  if (!delta || delta === '—') return '<span style="color:var(--text-dim)"> [—]</span>';
+  const positive = delta.startsWith('+');
+  const good = reverseColor ? !positive : positive;
+  const color = good ? 'var(--green)' : 'var(--red)';
+  const arrow = positive ? '↑' : '↓';
+  return `<span style="color:${color}"> [${escHtml(delta)} ${arrow}]</span>`;
+}
+
+function _renderAnalyticsBody(body) {
+  const r = state.analyticsReport;
+  const delta = r?.delta || {};
+  const pipeline = r?.pipeline || {};
+
+  if (!r) {
+    body.innerHTML = `
+      <div class="room-panel">
+        <div class="empty-state">NO REPORT YET.<br><br>CLICK GENERATE REPORT TO FETCH LIVE SHOPIFY DATA.</div>
+        <div class="panel-section">
+          <button class="btn btn-yellow" id="analytics-btn" onclick="runAnalytics()">▶ GENERATE REPORT</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const prevNote = r.previous_report_date
+    ? `<div style="font-size:6px;color:var(--text-dim);margin-top:4px">COMPARED TO REPORT: ${escHtml(r.previous_report_date)}</div>`
+    : `<div style="font-size:6px;color:var(--text-dim);margin-top:4px">FIRST REPORT — NO PREVIOUS DATA</div>`;
+
+  const productsHtml = (r.top_products || []).length === 0
+    ? `<div class="empty-state">NO PRODUCTS YET.</div>`
+    : (r.top_products || []).map(p => {
+        const statusColor = p.status === 'active' ? 'var(--green)' : 'var(--yellow)';
+        const statusLabel = p.status === 'active' ? 'ACTIVE' : 'DRAFT';
+        return `
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:6px 0;border-bottom:1px solid #1a0a2e;gap:8px">
+          <div style="font-size:6px;color:var(--text);line-height:1.8;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
+          <div style="display:flex;gap:6px;flex-shrink:0;align-items:center">
+            <span style="font-size:6px;color:${statusColor};border:1px solid ${statusColor};padding:2px 4px">${statusLabel}</span>
+            <span style="font-size:6px;color:var(--text-dim)">${p.units_sold} sold</span>
+            <span style="font-size:6px;color:var(--yellow)">$${p.revenue.toFixed(2)}</span>
+          </div>
+        </div>`;
+      }).join('');
+
+  body.innerHTML = `
+    <div class="room-panel">
+      <div class="panel-section" style="border-color:#b8960a">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="panel-section-title" style="margin-bottom:0;color:var(--yellow)">▶ STORE OVERVIEW</div>
+          <button onclick="runAnalytics()" id="analytics-btn"
+                  style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;background:#1a1200;color:var(--yellow);border:2px solid #b8960a">
+            ▶ REFRESH
+          </button>
+        </div>
+        <div class="brief-field">TOTAL PRODUCTS: <span>${r.products_total}${_deltaSpan(delta.products_total)}</span></div>
+        <div class="brief-field">ACTIVE: <span style="color:var(--green)">${r.products_active}${_deltaSpan(delta.products_active)}</span></div>
+        <div class="brief-field">DRAFTS: <span style="color:var(--yellow)">${r.products_draft}</span></div>
+        <div class="brief-field">TOTAL ORDERS: <span>${r.orders_total}${_deltaSpan(delta.orders_total)}</span></div>
+        <div class="brief-field">REVENUE (PAID): <span style="color:var(--green)">$${(r.revenue_total || 0).toFixed(2)}${_deltaSpan(delta.revenue_total)}</span></div>
+        <div id="analytics-run-status"></div>
+        ${prevNote}
+      </div>
+      <div class="panel-section">
+        <div class="panel-section-title">▶ PRODUCT PERFORMANCE</div>
+        ${productsHtml}
+      </div>
+      <div class="panel-section">
+        <div class="panel-section-title">▶ PIPELINE METRICS</div>
+        <div class="brief-field">BRIEFS RESEARCHED: <span>${pipeline.briefs_run || 0}${_deltaSpan(delta.briefs_run)}</span></div>
+        <div class="brief-field">VERDICTS COLLECTED: <span>${pipeline.verdicts_collected || 0}${_deltaSpan(delta.verdicts_collected)}</span></div>
+        <div class="brief-field">APPROVED: <span style="color:var(--green)">${pipeline.approved || 0}</span> &nbsp; REJECTED: <span style="color:var(--red)">${pipeline.rejected || 0}</span></div>
+        <div class="brief-field">APPROVAL RATE: <span>${Math.round((pipeline.approval_rate || 0) * 100)}%${_deltaSpan(delta.approval_rate)}</span></div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-section-title" style="color:var(--yellow)">▶ AGENT INSIGHTS</div>
+        <div style="font-size:7px;line-height:2;color:var(--text);white-space:pre-wrap">${escHtml(r.insights || '')}</div>
+        <div style="font-size:6px;color:var(--text-dim);margin-top:8px">MODEL: ${escHtml(r.model_used || '—')} &nbsp;|&nbsp; REPORT DATE: ${escHtml(r.report_date || '—')}</div>
+      </div>
+    </div>`;
+}
+
+async function runAnalytics() {
+  if (state.loading) return;
+  state.loading = true;
+
+  const btn = document.getElementById('analytics-btn');
+  const statusEl = document.getElementById('analytics-run-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> FETCHING SHOPIFY DATA + RUNNING ANALYSIS...</div>`;
+  else {
+    const body = document.getElementById('panel-body');
+    if (body) body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> FETCHING SHOPIFY DATA + RUNNING ANALYSIS...</div></div>`;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/analytics/run`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.error) {
+      toast('ERROR: ' + data.error);
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.analyticsReport = data;
+      const revenue = (data.revenue_total || 0).toFixed(2);
+      toast(`REPORT GENERATED — $${revenue} REVENUE — ${data.products_active} ACTIVE / ${data.products_draft} DRAFTS`);
+      _renderAnalyticsBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    toast('ANALYTICS ERROR: ' + e.message);
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+
+  state.loading = false;
+  if (btn) btn.disabled = false;
 }
 
 // ── Toast ──────────────────────────────────────────────────────
