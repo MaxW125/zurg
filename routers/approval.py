@@ -33,7 +33,7 @@ class ApprovalDecision(BaseModel):
 
 def _save_verdict(decision: ApprovalDecision) -> None:
     """Write a verdict markdown file to brain/approvals/ for the Approval Agent to learn from."""
-    approvals_dir = os.path.join(BRAIN_PATH, "approvals")
+    approvals_dir = os.path.join(BRAIN_PATH, "rooms", "approval", "verdicts")
     os.makedirs(approvals_dir, exist_ok=True)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -60,7 +60,7 @@ niche:{decision.niche.lower().replace(" ", "-")} product:{decision.product_type.
 
 def _load_verdicts() -> list[dict]:
     """Return all verdicts as a list, sorted oldest-first."""
-    approvals_dir = os.path.join(BRAIN_PATH, "approvals")
+    approvals_dir = os.path.join(BRAIN_PATH, "rooms", "approval", "verdicts")
     if not os.path.isdir(approvals_dir):
         return []
 

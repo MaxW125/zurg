@@ -7,21 +7,12 @@ from datetime import datetime, timezone
 from agents.llm_client import call_local, call_claude
 from agents.market_intel import gather_trends
 from agents.product_catalog import PRODUCT_TYPES
+from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 CONFIG_PATH = os.path.join(BRAIN_PATH, "hot", "research_config.json")
 
-SYSTEM = f"""You are a print-on-demand market researcher specialising in graphic apparel. Your job is to find niches that will sell as t-shirts, hoodies, and printed apparel.
-
-The golden rule: every niche you pick must have TWO things:
-1. A passionate community that actively buys merch (hobbyists, pet owners, sports fans, professionals with pride, fandoms)
-2. Strong visual design potential — you must be able to picture a striking graphic tee for it
-
-Best-performing POD categories: hobbies (fishing, hiking, gaming, gardening), pets (specific breeds), professions (nurses, teachers, welders), humor/sarcasm, sports/fitness niches, cute animals, cottagecore/nature, retro/vintage aesthetics, fandom-adjacent (but not IP-infringing).
-
-Avoid: abstract concepts, services, anything that doesn't translate to a visual graphic, overly broad audiences.
-
-You return ONLY a valid JSON object — no markdown, no explanation, no code fences. Just raw JSON.
+_SYSTEM_FALLBACK = """You are a print-on-demand market researcher specialising in graphic apparel. Find niches that sell as t-shirts, hoodies, and printed apparel. Return ONLY a valid JSON object with keys: niche, product_type, target_audience, keywords, design_direction.
 
 The JSON must have exactly these keys:
 - niche: short name for the niche (e.g. "Axolotl Lovers")
@@ -46,7 +37,7 @@ def _parse_brief(raw: str) -> dict:
 
 
 def _save_brief(brief: dict) -> str:
-    warm_dir = os.path.join(BRAIN_PATH, "warm")
+    warm_dir = os.path.join(BRAIN_PATH, "rooms", "research", "briefs")
     os.makedirs(warm_dir, exist_ok=True)
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     slug = brief["niche"].lower().replace(" ", "_")[:30]
@@ -144,13 +135,16 @@ If market data is provided above, prioritise niches that align with trending top
 
 Return the JSON brief."""
 
+    system = load_system_prompt("research", "researcher", _SYSTEM_FALLBACK).replace(
+        "{PRODUCT_TYPES}", ", ".join(f'"{p}"' for p in PRODUCT_TYPES)
+    )
     model_used = "ollama"
     raw = ""
     try:
-        raw = await call_local(prompt, system=SYSTEM)
+        raw = await call_local(prompt, system=system)
     except Exception:
         model_used = "claude"
-        raw = await call_claude(prompt, system=SYSTEM)
+        raw = await call_claude(prompt, system=system)
 
     brief = _parse_brief(raw)
     brief_path = _save_brief(brief)

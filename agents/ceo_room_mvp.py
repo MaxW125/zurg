@@ -1,6 +1,7 @@
 import os
 import json
 from agents.llm_client import call_local, call_claude, call_local_stream, call_claude_stream
+from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 
@@ -28,12 +29,8 @@ Output ONLY raw JSON. No explanation."""
 
 
 def _load_identity() -> str:
-    path = os.path.join(BRAIN_PATH, "hot", "identity.md")
-    try:
-        with open(path) as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        return "You are Zurg, the AI CEO of a print-on-demand business. Be direct and helpful."
+    fallback = "You are Zurg, the AI CEO of a print-on-demand business. Be direct and helpful."
+    return load_system_prompt("captain", "zurg", fallback)
 
 
 async def _classify_intent(message: str) -> str:

@@ -7,7 +7,7 @@ from agents.brain import load_system_prompt
 import httpx
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
-ANALYTICS_DIR = os.path.join(BRAIN_PATH, "analytics")
+ANALYTICS_DIR = os.path.join(BRAIN_PATH, "rooms", "analytics", "reports")
 SHOPIFY_API_VERSION = "2025-01"
 
 _ANALYSIS_FALLBACK = """You are the Analytics Agent for a print-on-demand Shopify store.
@@ -54,8 +54,8 @@ async def _fetch_shopify_orders() -> list:
 
 
 def _load_pipeline_metrics() -> dict:
-    briefs_dir = os.path.join(BRAIN_PATH, "warm")
-    approvals_dir = os.path.join(BRAIN_PATH, "approvals")
+    briefs_dir = os.path.join(BRAIN_PATH, "rooms", "research", "briefs")
+    approvals_dir = os.path.join(BRAIN_PATH, "rooms", "approval", "verdicts")
 
     briefs = glob.glob(os.path.join(briefs_dir, "brief_*.md"))
     verdicts = glob.glob(os.path.join(approvals_dir, "verdict_*.md"))

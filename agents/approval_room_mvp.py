@@ -30,7 +30,7 @@ Rules:
 
 def _load_verdict_history() -> list[dict]:
     """Load all verdict files from brain/approvals/."""
-    approvals_dir = os.path.join(BRAIN_PATH, "approvals")
+    approvals_dir = os.path.join(BRAIN_PATH, "rooms", "approval", "verdicts")
     if not os.path.isdir(approvals_dir):
         return []
 
