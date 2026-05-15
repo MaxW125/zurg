@@ -137,6 +137,10 @@ header {
   user-select: none;
 }
 
+#room-analytics {
+  background: #07040f;
+}
+
 #map-viewport.dragging .room {
   cursor: grabbing;
 }
