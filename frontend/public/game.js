@@ -797,17 +797,22 @@ async function runAnalytics() {
 
 // ── Pricing Panel ─────────────────────────────────────────────
 async function renderPricing(body) {
-  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING PRICING DATA...</div></div>`;
-
-  try {
-    const res = await fetch(`${API}/api/pricing/status`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.report) state.pricingReport = data.report;
-    }
-  } catch (_) {}
-
+  // Render immediately with whatever state we have cached — no spinner on open
   _renderPricingBody(body);
+
+  // Then silently refresh from server if there's a saved report we don't have yet
+  if (!state.pricingReport) {
+    try {
+      const res = await fetch(`${API}/api/pricing/status`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.report) {
+          state.pricingReport = data.report;
+          _renderPricingBody(body);
+        }
+      }
+    } catch (_) {}
+  }
 }
 
 const FLAG_COLORS = { BELOW_COST: 'var(--red)', LOW_MARGIN: 'var(--yellow)', OVERPRICED: 'var(--purple)', OK: 'var(--green)' };
