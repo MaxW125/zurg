@@ -9,6 +9,7 @@ const state = {
   csReport:        null,   // from CS Room
   shopHealthReport: null,  // from Shop Health Room
   warRoomReport:    null,  // from War Room
+  monitoringReport: null,  // from Monitoring Room
   chatHistory:     [],
   loading:         false,
   autoResearch:    localStorage.getItem('autoResearch')  === 'true',
@@ -39,6 +40,7 @@ function openPanel(room) {
     cs:         '🎧 CS ROOM',
     shophealth: '🏥 SHOP HEALTH ROOM',
     warroom:    '⚔️ WAR ROOM',
+    monitoring: '🖥️ MONITORING ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -54,7 +56,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -1359,6 +1361,115 @@ async function runWarRoom() {
   if (btn) btn.disabled = false;
 }
 
+// ── Monitoring Room Panel ──────────────────────────────────────
+async function renderMonitoring(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING MONITORING ROOM...</div></div>`;
+  if (!state.monitoringReport) {
+    try {
+      const res = await fetch(`${API}/api/monitoring/status`);
+      const data = await res.json();
+      if (data.report) state.monitoringReport = data.report;
+    } catch (e) { /* no cached report yet */ }
+  }
+  _renderMonitoringBody(body);
+}
+
+function _renderMonitoringBody(body) {
+  const r = state.monitoringReport;
+  if (!r) {
+    body.innerHTML = `<div class="room-panel">
+      <div class="empty-state">NO HEALTH CHECK RUN YET</div>
+      <button class="btn btn-green" id="monitoring-btn" onclick="runMonitoring()">▶ RUN HEALTH CHECK</button>
+      <div id="monitoring-run-status"></div>
+    </div>`;
+    return;
+  }
+
+  const statusColor = { green: '#00ff88', yellow: '#ffaa00', red: '#ff6b6b' };
+  const statusIcon  = { green: '🟢', yellow: '🟡', red: '🔴' };
+
+  const overallColor = statusColor[r.overall_status] || '#e0e0e0';
+  const overallIcon  = statusIcon[r.overall_status]  || '⚪';
+
+  const systemRows = (r.systems || []).map(s => {
+    const color = statusColor[s.status] || '#e0e0e0';
+    const icon  = statusIcon[s.status]  || '⚪';
+    return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid #1a1a2e;align-items:flex-start">
+      <div style="min-width:16px">${icon}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:7px;color:${color}">${escHtml(s.name)}</div>
+        <div style="font-size:6px;color:var(--muted);line-height:1.5;word-break:break-word">${escHtml(s.detail)}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  const alertsHtml = (r.alerts || []).length === 0
+    ? `<div style="font-size:7px;color:#00ff88">— No alerts —</div>`
+    : (r.alerts || []).map(a => `<div style="font-size:7px;color:#ffaa00;padding:3px 0;border-bottom:1px solid #1a1a2e">⚠ ${escHtml(a)}</div>`).join('');
+
+  body.innerHTML = `<div class="room-panel">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-green" id="monitoring-btn" onclick="runMonitoring()">▶ RUN HEALTH CHECK</button>
+    </div>
+    <div style="font-size:7px;color:var(--muted);margin-bottom:12px">
+      LAST CHECK: ${escHtml(r.checked_at || '—')} UTC
+    </div>
+
+    <div style="background:#0d0d1a;border:2px solid ${overallColor};padding:10px;margin-bottom:12px;text-align:center">
+      <div style="font-size:9px;color:${overallColor}">${overallIcon} ${(r.overall_status || '').toUpperCase()}</div>
+      <div style="font-size:7px;color:#e0e0e0;margin-top:6px;line-height:1.6">${escHtml(r.summary || '')}</div>
+    </div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:7px;color:var(--muted);margin-bottom:6px">SYSTEMS</div>
+      ${systemRows}
+    </div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:7px;color:var(--muted);margin-bottom:6px">ALERTS</div>
+      ${alertsHtml}
+    </div>
+
+    <div id="monitoring-run-status"></div>
+  </div>`;
+}
+
+async function runMonitoring() {
+  if (state.loading) return;
+  state.loading = true;
+
+  const btn = document.getElementById('monitoring-btn');
+  const statusEl = document.getElementById('monitoring-run-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> RUNNING HEALTH CHECKS...</div>`;
+  else {
+    const body = document.getElementById('panel-body');
+    if (body) body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> RUNNING HEALTH CHECKS...</div></div>`;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/monitoring/run`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.error) {
+      toast('MONITORING ERROR: ' + data.error);
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.monitoringReport = data;
+      const alertCount = (data.alerts || []).length;
+      const overall = (data.overall_status || '').toUpperCase();
+      toast(`HEALTH CHECK DONE — ${overall}${alertCount ? ' · ' + alertCount + ' ALERT' + (alertCount !== 1 ? 'S' : '') : ''}`);
+      _renderMonitoringBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    toast('MONITORING ERROR: ' + e.message);
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+
+  state.loading = false;
+  if (btn) btn.disabled = false;
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -1490,7 +1601,7 @@ function escHtml(str) {
     // Row 2
     { cx: 512,  cy: 2560, gx: 0, gy: 2, built: true  },  // Shop Health
     { cx: 1536, cy: 2560, gx: 1, gy: 2, built: true  },  // War Room
-    { cx: 2560, cy: 2560, gx: 2, gy: 2, built: false },  // Monitoring
+    { cx: 2560, cy: 2560, gx: 2, gy: 2, built: true  },  // Monitoring
     { cx: 3584, cy: 2560, gx: 3, gy: 2, built: false },  // Radar Bay
     // Row 3
     { cx: 512,  cy: 3584, gx: 0, gy: 3, built: false },  // Armory
