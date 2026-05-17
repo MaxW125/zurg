@@ -5,7 +5,6 @@ const state = {
   design:          null,   // from Designer
   product:         null,   // from Factory (after approval)
   analyticsReport: null,   // from Analytics Room
-  pricingReport:   null,   // from Pricing Room
   chatHistory:     [],
   loading:         false,
   autoResearch:    localStorage.getItem('autoResearch')  === 'true',
@@ -32,7 +31,6 @@ function openPanel(room) {
     factory:  '🏭 FACTORY ROOM',
     approval: '⚖️ APPROVAL ROOM',
     analytics: '📊 ANALYTICS ROOM',
-    pricing:   '💰 PRICING ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -48,7 +46,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -146,27 +144,17 @@ async function sendChat() {
 
     if (data.intent === 'research' && data.data?.niche) {
       state.brief = data.data;
-      // auto-design chained server-side: design is nested under data.data.design
-      if (data.data?.design?.image_path) {
-        state.design = data.data.design;
-        toast('RESEARCH + DESIGN COMPLETE — OPEN APPROVAL ROOM');
-        if (state.autoApproval) setTimeout(() => _runAutoApprove(), 400);
-        else setTimeout(() => openPanel('approval'), 600);
-      } else {
-        toast('RESEARCH COMPLETE — ' + data.data.niche.toUpperCase());
-        if (state.autoDesign) setTimeout(() => runDesign(), 400);
-      }
+      toast('RESEARCH COMPLETE — ' + data.data.niche.toUpperCase());
+      if (state.autoDesign) setTimeout(() => runDesign(), 400);
     } else if (data.intent === 'design' && data.data?.image_path) {
       state.design = data.data;
       toast('DESIGN READY' + (state.autoApproval ? ' — AUTO-APPROVING...' : ' — OPEN APPROVAL ROOM'));
       if (state.autoApproval) setTimeout(() => _runAutoApprove(), 400);
-      else setTimeout(() => openPanel('approval'), 600);
     } else if (data.intent === 'pipeline') {
       if (data.data?.brief)      state.brief  = data.data.brief;
       if (data.data?.image_path) state.design = data.data;
       toast('PIPELINE COMPLETE — REVIEW DESIGN IN APPROVAL ROOM');
       if (state.design && state.autoApproval) setTimeout(() => _runAutoApprove(), 400);
-      else if (state.design) setTimeout(() => openPanel('approval'), 600);
     } else if (data.intent === 'publish' && data.data?.product_url) {
       state.product = data.data;
       toast('PUBLISHED TO SHOPIFY');
@@ -183,14 +171,13 @@ async function sendChat() {
 
 // ── Research Panel ─────────────────────────────────────────────
 async function renderResearch(body) {
-  // Always sync state.brief from server so WhatsApp-triggered research shows up
-  try {
-    const r = await fetch(`${API}/api/rooms/research/latest-brief`);
-    if (r.ok) {
-      const b = await r.json();
-      if (b && b.niche) state.brief = b;
-    }
-  } catch (_) {}
+  // Sync latest brief from server so WhatsApp-triggered research shows up
+  if (!state.brief?.niche) {
+    try {
+      const r = await fetch(`${API}/api/rooms/research/latest-brief`);
+      if (r.ok) { const b = await r.json(); if (b?.niche) state.brief = b; }
+    } catch (_) {}
+  }
 
   const briefHtml = state.brief ? `
     <div class="panel-section">
@@ -403,22 +390,12 @@ function toggleAutoResearch() {
 function toggleAutoDesign() {
   state.autoDesign = !state.autoDesign;
   localStorage.setItem('autoDesign', state.autoDesign);
-  fetch(`${API}/api/rooms/pipeline/config`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ auto_design: state.autoDesign }),
-  });
   renderPanel('design');
 }
 
 function toggleAutoApproval() {
   state.autoApproval = !state.autoApproval;
   localStorage.setItem('autoApproval', state.autoApproval);
-  fetch(`${API}/api/rooms/pipeline/config`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ auto_approval: state.autoApproval }),
-  });
   renderPanel('approval');
 }
 
@@ -436,10 +413,7 @@ async function renderApproval(body) {
   if (!state.design?.image_path) {
     try {
       const r = await fetch(`${API}/api/rooms/design/latest`);
-      if (r.ok) {
-        const d = await r.json();
-        if (d?.image_path) state.design = d;
-      }
+      if (r.ok) { const d = await r.json(); if (d?.image_path) state.design = d; }
     } catch (_) {}
   }
 
@@ -833,200 +807,6 @@ async function runAnalytics() {
 
   state.loading = false;
   if (btn) btn.disabled = false;
-}
-
-// ── Pricing Panel ─────────────────────────────────────────────
-async function renderPricing(body) {
-  // Render immediately with whatever state we have cached — no spinner on open
-  _renderPricingBody(body);
-
-  // Then silently refresh from server if there's a saved report we don't have yet
-  if (!state.pricingReport) {
-    try {
-      const res = await fetch(`${API}/api/pricing/status`);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.report) {
-          state.pricingReport = data.report;
-          _renderPricingBody(body);
-        }
-      }
-    } catch (_) {}
-  }
-}
-
-const FLAG_COLORS = { BELOW_COST: 'var(--red)', LOW_MARGIN: 'var(--yellow)', OVERPRICED: 'var(--purple)', OK: 'var(--green)' };
-const FLAG_LABELS = { BELOW_COST: '⚠ BELOW COST', LOW_MARGIN: '↓ LOW MARGIN', OVERPRICED: '↑ OVERPRICED', OK: '✓ OK' };
-
-function _renderPricingBody(body) {
-  const r = state.pricingReport;
-
-  if (!r) {
-    body.innerHTML = `
-      <div class="room-panel">
-        <div class="empty-state">NO PRICING ANALYSIS YET.<br><br>CLICK RUN ANALYSIS TO CHECK MARGINS + COMPETITOR PRICES.</div>
-        <div class="panel-section">
-          <button class="btn btn-yellow" id="pricing-run-btn" onclick="runPricing()">▶ RUN ANALYSIS</button>
-        </div>
-      </div>`;
-    return;
-  }
-
-  const productsHtml = (r.products || []).length === 0
-    ? `<div class="empty-state">NO PRODUCTS YET.</div>`
-    : (r.products || []).map(p => {
-        const flagColor = FLAG_COLORS[p.flag] || 'var(--text)';
-        const flagLabel = FLAG_LABELS[p.flag] || p.flag;
-        const marginColor = p.margin_pct >= 45 ? 'var(--green)' : p.margin_pct >= 30 ? 'var(--yellow)' : 'var(--red)';
-        const statusColor = p.status === 'active' ? 'var(--green)' : 'var(--yellow)';
-        const priceDiff = p.suggested_price - p.current_price;
-        const arrowHtml = Math.abs(priceDiff) < 0.01 ? '' :
-          priceDiff > 0
-            ? `<span style="color:var(--green);font-size:6px"> → $${p.suggested_price.toFixed(2)} ↑</span>`
-            : `<span style="color:var(--red);font-size:6px"> → $${p.suggested_price.toFixed(2)} ↓</span>`;
-        return `
-        <div style="padding:6px 0;border-bottom:1px solid #1a0a2e">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px">
-            <div style="font-size:6px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
-            <span style="font-size:6px;color:${statusColor};border:1px solid ${statusColor};padding:2px 4px;flex-shrink:0">${p.status.toUpperCase()}</span>
-          </div>
-          <div style="display:flex;gap:10px;margin-top:4px;flex-wrap:wrap">
-            <span style="font-size:6px;color:var(--text-dim)">BASE: $${p.base_cost.toFixed(2)}</span>
-            <span style="font-size:6px;color:var(--text)">PRICE: $${p.current_price.toFixed(2)}${arrowHtml}</span>
-            <span style="font-size:6px;color:${marginColor}">MARGIN: ${p.margin_pct}%</span>
-            <span style="font-size:6px;color:${flagColor};border:1px solid ${flagColor};padding:1px 3px">${flagLabel}</span>
-          </div>
-        </div>`;
-      }).join('');
-
-  const flaggedCount = (r.products || []).filter(p => p.flag !== 'OK').length;
-  const avgColor = r.avg_margin_pct >= 45 ? 'var(--green)' : r.avg_margin_pct >= 30 ? 'var(--yellow)' : 'var(--red)';
-
-  body.innerHTML = `
-    <div class="room-panel">
-      <div class="panel-section" style="border-color:#b8960a">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div class="panel-section-title" style="margin-bottom:0;color:var(--yellow)">▶ PRICING HEALTH</div>
-          <button onclick="runPricing()" id="pricing-run-btn"
-                  style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;background:#1a1200;color:var(--yellow);border:2px solid #b8960a">
-            ▶ REFRESH
-          </button>
-        </div>
-        <div class="brief-field">PRODUCTS ANALYSED: <span>${r.total_products}</span></div>
-        <div class="brief-field">AVG MARGIN: <span style="color:${avgColor}">${r.avg_margin_pct}%</span></div>
-        <div class="brief-field">FLAGGED: <span style="color:${flaggedCount > 0 ? 'var(--red)' : 'var(--green)'}">${flaggedCount} PRODUCTS</span></div>
-        <div class="brief-field">COMPETITOR DATA: <span style="color:${r.has_competitor_data ? 'var(--green)' : 'var(--text-dim)'}">${r.has_competitor_data ? 'LOADED' : 'UNAVAILABLE'}</span></div>
-        <div id="pricing-status"></div>
-        <div style="font-size:6px;color:var(--text-dim);margin-top:4px">LAST RUN: ${escHtml(r.report_date || '—')}</div>
-      </div>
-      <div class="panel-section">
-        <div class="panel-section-title">▶ PRODUCT MARGINS</div>
-        ${productsHtml}
-      </div>
-      ${flaggedCount > 0 ? `
-      <div class="panel-section" style="border-color:#5a0020">
-        <div class="panel-section-title" style="color:var(--red)">▶ APPLY SUGGESTED PRICES</div>
-        <div style="font-size:6px;color:var(--text-dim);margin-bottom:8px;line-height:2">${flaggedCount} PRODUCT${flaggedCount > 1 ? 'S' : ''} NEED REPRICING. PREVIEW SHOWS SUGGESTED PRICES ABOVE.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn" id="pricing-preview-btn" onclick="previewPricing()"
-                  style="background:#1a0a00;color:var(--yellow);border-color:#b8960a">▶ PREVIEW CHANGES</button>
-          <button class="btn" id="pricing-apply-btn" onclick="applyPricing()"
-                  style="background:#200005;color:var(--red);border-color:#5a0020">⚠ APPLY PRICES</button>
-        </div>
-        <div id="pricing-apply-status"></div>
-      </div>` : ''}
-      <div class="panel-section">
-        <div class="panel-section-title" style="color:var(--yellow)">▶ AGENT RECOMMENDATIONS</div>
-        <div style="font-size:7px;line-height:2;color:var(--text);white-space:pre-wrap">${escHtml(r.recommendations || '')}</div>
-        <div style="font-size:6px;color:var(--text-dim);margin-top:8px">MODEL: ${escHtml(r.model_used || '—')}</div>
-      </div>
-    </div>`;
-}
-
-async function runPricing() {
-  if (state.loading) return;
-  state.loading = true;
-
-  const btn = document.getElementById('pricing-run-btn');
-  const statusEl = document.getElementById('pricing-status');
-  if (btn) btn.disabled = true;
-
-  const body = document.getElementById('panel-body');
-  if (statusEl) {
-    statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> FETCHING SHOPIFY PRICES + RUNNING ANALYSIS...</div>`;
-  } else if (body) {
-    body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> FETCHING SHOPIFY PRICES + RUNNING ANALYSIS...</div></div>`;
-  }
-
-  try {
-    const res = await fetch(`${API}/api/pricing/run`, { method: 'POST' });
-    const data = await res.json();
-    if (data.error) {
-      toast('ERROR: ' + data.error);
-      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
-    } else {
-      state.pricingReport = data;
-      toast(`PRICING ANALYSIS DONE — ${data.flagged_count} FLAGGED — AVG MARGIN ${data.avg_margin_pct}%`);
-      _renderPricingBody(document.getElementById('panel-body'));
-    }
-  } catch (e) {
-    toast('PRICING ERROR: ' + e.message);
-    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
-  }
-
-  state.loading = false;
-  if (btn) btn.disabled = false;
-}
-
-async function previewPricing() {
-  const statusEl = document.getElementById('pricing-apply-status');
-  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> CALCULATING PREVIEW...</div>`;
-  try {
-    const res = await fetch(`${API}/api/pricing/apply`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dry_run: true }),
-    });
-    const data = await res.json();
-    if (data.error) {
-      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
-      return;
-    }
-    const lines = (data.changes || []).map(c =>
-      `<div style="font-size:6px;color:var(--text);padding:2px 0">${escHtml(c.title)}: $${c.old_price.toFixed(2)} → <span style="color:var(--yellow)">$${c.new_price.toFixed(2)}</span></div>`
-    ).join('');
-    if (statusEl) statusEl.innerHTML = `<div style="margin-top:6px"><div style="font-size:6px;color:var(--text-dim);margin-bottom:4px">DRY RUN — ${data.total_targets} CHANGES QUEUED:</div>${lines}</div>`;
-  } catch (e) {
-    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
-  }
-}
-
-async function applyPricing() {
-  if (!confirm('Apply suggested prices to all flagged Shopify products?')) return;
-  const statusEl = document.getElementById('pricing-apply-status');
-  const applyBtn = document.getElementById('pricing-apply-btn');
-  if (applyBtn) applyBtn.disabled = true;
-  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> APPLYING PRICES TO SHOPIFY...</div>`;
-  try {
-    const res = await fetch(`${API}/api/pricing/apply`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dry_run: false }),
-    });
-    const data = await res.json();
-    if (data.error) {
-      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
-    } else {
-      toast(`PRICES APPLIED — ${data.applied_count}/${data.total_targets} UPDATED`);
-      if (statusEl) statusEl.innerHTML = `<div style="font-size:6px;color:var(--green);margin-top:6px">✓ ${data.applied_count} PRICE${data.applied_count !== 1 ? 'S' : ''} UPDATED ON SHOPIFY</div>`;
-      // Re-run analysis to reflect new prices
-      setTimeout(runPricing, 1500);
-    }
-  } catch (e) {
-    toast('APPLY ERROR: ' + e.message);
-    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
-  }
-  if (applyBtn) applyBtn.disabled = false;
 }
 
 // ── Toast ──────────────────────────────────────────────────────
@@ -1456,21 +1236,3 @@ function escHtml(str) {
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') closePanel();
 });
-
-// Sync auto mode flags from server on load (so browser matches server state)
-(async () => {
-  try {
-    const r = await fetch(`${API}/api/rooms/pipeline/config`);
-    if (r.ok) {
-      const cfg = await r.json();
-      if (cfg.auto_design !== undefined) {
-        state.autoDesign = cfg.auto_design;
-        localStorage.setItem('autoDesign', cfg.auto_design);
-      }
-      if (cfg.auto_approval !== undefined) {
-        state.autoApproval = cfg.auto_approval;
-        localStorage.setItem('autoApproval', cfg.auto_approval);
-      }
-    }
-  } catch (_) {}
-})();
