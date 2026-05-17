@@ -5,6 +5,7 @@ const state = {
   design:          null,   // from Designer
   product:         null,   // from Factory (after approval)
   analyticsReport: null,   // from Analytics Room
+  pricingReport:   null,   // from Pricing Room
   chatHistory:     [],
   loading:         false,
   autoResearch:    localStorage.getItem('autoResearch')  === 'true',
@@ -31,6 +32,7 @@ function openPanel(room) {
     factory:  '🏭 FACTORY ROOM',
     approval: '⚖️ APPROVAL ROOM',
     analytics: '📊 ANALYTICS ROOM',
+    pricing:  '💰 PRICING ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -46,7 +48,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -812,6 +814,171 @@ async function runAnalytics() {
   if (btn) btn.disabled = false;
 }
 
+// ── Pricing Panel ─────────────────────────────────────────────
+async function renderPricing(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING PRICING DATA...</div></div>`;
+
+  try {
+    const res = await fetch(`${API}/api/pricing/status`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.report) state.pricingReport = data.report;
+    }
+  } catch (_) {}
+
+  _renderPricingBody(body);
+}
+
+function _renderPricingBody(body) {
+  const r = state.pricingReport;
+
+  if (!r) {
+    body.innerHTML = `
+      <div class="room-panel">
+        <div class="empty-state">NO PRICING REPORT YET.<br><br>CLICK RUN ANALYSIS TO CHECK COMPETITOR PRICES AND GET RECOMMENDATIONS.</div>
+        <div class="panel-section">
+          <button class="btn btn-yellow" id="pricing-btn" onclick="runPricing()">▶ RUN ANALYSIS</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const productsHtml = (r.product_stats || []).length === 0
+    ? `<div class="empty-state">NO ACTIVE PRODUCTS.</div>`
+    : (r.product_stats || []).map(p => {
+        const daysSale = p.days_since_sale !== null && p.days_since_sale !== undefined
+          ? `${p.days_since_sale}d ago`
+          : 'never sold';
+        return `
+        <div style="padding:8px 0;border-bottom:1px solid #1a0a2e">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
+            <div style="font-size:6px;color:var(--text);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(p.title)}</div>
+            <span style="font-size:7px;color:var(--yellow);flex-shrink:0">$${p.price.toFixed(2)}</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center">
+            <span style="font-size:6px;color:var(--text-dim)">${p.units_sold} sold</span>
+            <span style="font-size:6px;color:var(--text-dim)">${p.days_live ?? '?'}d live</span>
+            <span style="font-size:6px;color:var(--text-dim)">last sale: ${escHtml(daysSale)}</span>
+            <button onclick="showApplyPrice(${p.variant_id}, ${p.price.toFixed(2)})"
+                    style="font-family:'Press Start 2P',monospace;font-size:5px;padding:3px 6px;cursor:pointer;background:#0d0020;color:var(--green);border:1px solid var(--green);margin-left:auto">
+              EDIT PRICE
+            </button>
+          </div>
+          <div id="apply-form-${p.variant_id}" style="display:none;margin-top:6px;display:none">
+            <div style="display:flex;gap:6px;align-items:center">
+              <span style="font-size:6px;color:var(--text-dim)">NEW PRICE $</span>
+              <input id="price-input-${p.variant_id}" type="number" step="0.01" min="0" value="${p.price.toFixed(2)}"
+                     style="font-family:'Press Start 2P',monospace;font-size:6px;width:70px;padding:4px;background:#0d0020;color:var(--text);border:1px solid #4a2070">
+              <button onclick="applyPrice(${p.variant_id})"
+                      style="font-family:'Press Start 2P',monospace;font-size:5px;padding:4px 8px;cursor:pointer;background:#001200;color:var(--green);border:1px solid var(--green)">
+                APPLY
+              </button>
+              <button onclick="hideApplyPrice(${p.variant_id})"
+                      style="font-family:'Press Start 2P',monospace;font-size:5px;padding:4px 6px;cursor:pointer;background:#0d0020;color:var(--text-dim);border:1px solid #4a2070">
+                ✕
+              </button>
+            </div>
+          </div>
+        </div>`;
+      }).join('');
+
+  body.innerHTML = `
+    <div class="room-panel">
+      <div class="panel-section" style="border-color:#b8960a">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="panel-section-title" style="margin-bottom:0;color:var(--yellow)">▶ ACTIVE PRODUCTS</div>
+          <button onclick="runPricing()" id="pricing-btn"
+                  style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;background:#1a1200;color:var(--yellow);border:2px solid #b8960a">
+            ▶ REFRESH
+          </button>
+        </div>
+        <div style="font-size:6px;color:var(--text-dim);margin-bottom:8px">LAST RUN: ${escHtml(r.run_date || '—')} &nbsp;|&nbsp; ${r.products_analysed || 0} PRODUCTS ANALYSED &nbsp;|&nbsp; MODEL: ${escHtml(r.model_used || '—')}</div>
+        ${productsHtml}
+        <div id="pricing-run-status"></div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-section-title" style="color:var(--yellow)">▶ PRICING RECOMMENDATIONS</div>
+        <div style="font-size:7px;line-height:2;color:var(--text);white-space:pre-wrap">${escHtml(r.analysis || '')}</div>
+      </div>
+    </div>`;
+}
+
+function showApplyPrice(variantId, currentPrice) {
+  const form = document.getElementById(`apply-form-${variantId}`);
+  if (form) form.style.display = 'block';
+}
+
+function hideApplyPrice(variantId) {
+  const form = document.getElementById(`apply-form-${variantId}`);
+  if (form) form.style.display = 'none';
+}
+
+async function applyPrice(variantId) {
+  const input = document.getElementById(`price-input-${variantId}`);
+  if (!input) return;
+  const newPrice = parseFloat(input.value).toFixed(2);
+  if (isNaN(newPrice) || parseFloat(newPrice) <= 0) {
+    toast('INVALID PRICE');
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/pricing/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ variant_id: variantId, new_price: newPrice }),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      toast(`PRICE UPDATED — $${data.price}`);
+      hideApplyPrice(variantId);
+      if (state.pricingReport?.product_stats) {
+        const p = state.pricingReport.product_stats.find(x => x.variant_id === variantId);
+        if (p) p.price = parseFloat(data.price);
+      }
+      _renderPricingBody(document.getElementById('panel-body'));
+    } else {
+      toast('PRICE UPDATE FAILED');
+    }
+  } catch (e) {
+    toast('ERROR: ' + e.message);
+  }
+}
+
+async function runPricing() {
+  if (state.loading) return;
+  state.loading = true;
+
+  const btn = document.getElementById('pricing-btn');
+  const statusEl = document.getElementById('pricing-run-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> FETCHING PRODUCTS + COMPETITOR PRICES + RUNNING ANALYSIS...</div>`;
+  else {
+    const body = document.getElementById('panel-body');
+    if (body) body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> FETCHING PRODUCTS + COMPETITOR PRICES + RUNNING ANALYSIS...</div></div>`;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/pricing/run`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.error) {
+      toast('ERROR: ' + data.error);
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.pricingReport = data;
+      toast(`PRICING ANALYSIS DONE — ${data.products_analysed} PRODUCTS REVIEWED`);
+      _renderPricingBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    toast('PRICING ERROR: ' + e.message);
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+
+  state.loading = false;
+  if (btn) btn.disabled = false;
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -938,8 +1105,8 @@ function escHtml(str) {
     // Row 1
     { cx: 512,  cy: 1536, gx: 0, gy: 1, built: true  },  // Approval
     { cx: 1536, cy: 1536, gx: 1, gy: 1, built: true  },  // Analytics
-    { cx: 2560, cy: 1536, gx: 2, gy: 1, built: false },  // CS
-    { cx: 3584, cy: 1536, gx: 3, gy: 1, built: false },  // Pricing
+    { cx: 2560, cy: 1536, gx: 2, gy: 1, built: true  },  // Pricing
+    { cx: 3584, cy: 1536, gx: 3, gy: 1, built: false },  // CS
     // Row 2
     { cx: 512,  cy: 2560, gx: 0, gy: 2, built: false },  // Shop Health
     { cx: 1536, cy: 2560, gx: 1, gy: 2, built: false },  // Media Bay

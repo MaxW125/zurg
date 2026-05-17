@@ -14,11 +14,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import chat, rooms, approval, analytics
+from routers import chat, rooms, approval, analytics, pricing
 app.include_router(chat.router)
 app.include_router(rooms.router)
 app.include_router(approval.router)
 app.include_router(analytics.router)
+app.include_router(pricing.router)
 
 
 @app.get("/health")
