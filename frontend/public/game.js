@@ -8,6 +8,7 @@ const state = {
   pricingReport:   null,   // from Pricing Room
   csReport:        null,   // from CS Room
   shopHealthReport: null,  // from Shop Health Room
+  warRoomReport:    null,  // from War Room
   chatHistory:     [],
   loading:         false,
   autoResearch:    localStorage.getItem('autoResearch')  === 'true',
@@ -37,6 +38,7 @@ function openPanel(room) {
     pricing:  '💰 PRICING ROOM',
     cs:         '🎧 CS ROOM',
     shophealth: '🏥 SHOP HEALTH ROOM',
+    warroom:    '⚔️ WAR ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -52,7 +54,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -1255,6 +1257,108 @@ async function runShopHealth() {
   if (btn) btn.disabled = false;
 }
 
+// ── War Room Panel ─────────────────────────────────────────────
+async function renderWarRoom(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING WAR ROOM...</div></div>`;
+  if (!state.warRoomReport) {
+    try {
+      const res = await fetch(`${API}/api/war-room/status`);
+      const data = await res.json();
+      if (data.report) state.warRoomReport = data.report;
+    } catch (e) { /* no cached report yet */ }
+  }
+  _renderWarRoomBody(body);
+}
+
+function _renderWarRoomBody(body) {
+  const r = state.warRoomReport;
+  if (!r) {
+    body.innerHTML = `<div class="room-panel">
+      <div class="empty-state">NO REPORT YET — RUN A SYNTHESIS TO SEE THE PLAN</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-red" id="warroom-btn" onclick="runWarRoom()">▶ RUN SYNTHESIS</button>
+      </div>
+      <div id="warroom-run-status"></div>
+    </div>`;
+    return;
+  }
+
+  const fix    = r.fix    || [];
+  const launch = r.launch || [];
+  const watch  = r.watch  || [];
+  const rooms  = (r.rooms_included || []).map(s => s.toUpperCase()).join(', ');
+
+  const listHtml = (items, color) => items.length === 0
+    ? `<div class="empty-state" style="font-size:7px">—</div>`
+    : items.map(i => `<div style="font-size:7px;padding:4px 0;border-bottom:1px solid #1a1a2e;color:${color}">${escHtml(i)}</div>`).join('');
+
+  body.innerHTML = `<div class="room-panel">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn btn-red" id="warroom-btn" onclick="runWarRoom()">▶ RUN SYNTHESIS</button>
+    </div>
+    <div style="font-size:7px;color:var(--muted);margin-bottom:8px">
+      ${escHtml(r.run_date || '')} · MODEL: ${escHtml(r.model_used || '?')} · ROOMS: ${escHtml(rooms)}
+    </div>
+
+    <div style="background:#0d0d1a;border:1px solid #2a2a4a;padding:10px;margin-bottom:12px">
+      <div style="font-size:7px;color:var(--muted);margin-bottom:6px">EXECUTIVE SUMMARY</div>
+      <div style="font-size:7px;color:#e0e0e0;line-height:1.6">${escHtml(r.summary || '')}</div>
+    </div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:7px;color:var(--red);margin-bottom:6px">🔴 FIX — URGENT (${fix.length})</div>
+      ${listHtml(fix, '#ff6b6b')}
+    </div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:7px;color:var(--green);margin-bottom:6px">🟢 LAUNCH — GROWTH (${launch.length})</div>
+      ${listHtml(launch, '#00ff88')}
+    </div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:7px;color:#ffaa00;margin-bottom:6px">🟡 WATCH — MONITOR (${watch.length})</div>
+      ${listHtml(watch, '#ffaa00')}
+    </div>
+
+    <div id="warroom-run-status"></div>
+  </div>`;
+}
+
+async function runWarRoom() {
+  if (state.loading) return;
+  state.loading = true;
+
+  const btn = document.getElementById('warroom-btn');
+  const statusEl = document.getElementById('warroom-run-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> SYNTHESISING ALL ROOMS...</div>`;
+  else {
+    const body = document.getElementById('panel-body');
+    if (body) body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> SYNTHESISING ALL ROOMS...</div></div>`;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/war-room/run`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.error) {
+      toast('ERROR: ' + data.error);
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.warRoomReport = data;
+      const fixCount = (data.fix || []).length;
+      toast(`WAR ROOM DONE — ${fixCount} URGENT ITEM${fixCount !== 1 ? 'S' : ''}`);
+      _renderWarRoomBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    toast('WAR ROOM ERROR: ' + e.message);
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+
+  state.loading = false;
+  if (btn) btn.disabled = false;
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -1390,7 +1494,7 @@ function escHtml(str) {
     { cx: 3584, cy: 2560, gx: 3, gy: 2, built: false },  // Radar Bay
     // Row 3
     { cx: 512,  cy: 3584, gx: 0, gy: 3, built: false },  // Armory
-    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: false },  // War Room
+    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: true  },  // War Room
     { cx: 2560, cy: 3584, gx: 2, gy: 3, built: false },  // Memory Room
     { cx: 3584, cy: 3584, gx: 3, gy: 3, built: false },  // Treasury
   ];
