@@ -45,6 +45,7 @@
 
 - [x] Pricing Room — competitor price monitoring, dynamic repricing, margin protection
 - [x] CS Room — handle Shopify customer messages, order issues, review requests
+  - [ ] End-to-end test once store has real orders (unfulfilled 3+ days, fulfilled 7–60 days, cancelled/refunded)
 - [ ] Shop Health Room — listing SEO refresh, stale listing detection
 - [ ] Media Bay — TikTok/Instagram content creation, Publer scheduling
 - [ ] Monitoring Room — system health alerts, spend warnings, API failure detection
