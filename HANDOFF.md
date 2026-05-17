@@ -4,6 +4,42 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-17 — Monitoring Room
+
+### What We Built
+**Monitoring Room** — system health alerts, spend warnings, and API failure detection (11th room built).
+
+- **`agents/monitoring_room_mvp.py`** — no LLM; pure async `httpx` health checks: (1) Server always green since we're responding, (2) Shopify API — GET /shop.json, 401 = token expired, (3) Anthropic API — GET /v1/models, 401 = key invalid, (4) Ollama — GET /api/tags, flags if unreachable, (5) each of the 5 data rooms (analytics, pricing, shop_health, cs, war_room) — checks latest_report.json file age, yellow if >24h or missing. Returns `{ checked_at, overall_status (green/yellow/red), systems[], alerts[], summary }`. Saves to vault at `rooms/monitoring/reports/`.
+- **`routers/monitoring.py`** — `POST /api/monitoring/run`, `GET /api/monitoring/status`
+- **`main.py`** — monitoring router wired in
+- **`game.js`** — `renderMonitoring`, `_renderMonitoringBody`, `runMonitoring`; `monitoringReport` state; `🖥️ MONITORING ROOM` panel title; `monitoring` key in titles/renders; `built: true` at `gx=2, gy=2`
+- **`index.html`** — Monitoring Room at col 3, row 3 — coming-soon markup replaced with live `onclick="openPanel('monitoring')"`
+- **Vault** — `rooms/monitoring/room.md` updated + `rooms/monitoring/agents/monitor/identity.md` written
+
+### Bugs Hit
+- None. Clean build first pass.
+
+### Current State
+- 11 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health, War Room, Monitoring
+- Monitoring tested end-to-end: `POST /api/monitoring/run` correctly flagged Anthropic API key as 401 (real issue — key needs refreshing), confirmed Shopify token valid, Ollama running with llama3.2, all 5 data room reports within 24h
+- `GET /api/monitoring/status` returns cached report correctly
+- Both endpoints confirmed in OpenAPI
+
+### What's Next
+- **Anthropic API key** — the check revealed it's currently returning 401. May need a fresh key from the Anthropic console.
+- **Media Bay** — TikTok/Instagram content creation, Publer scheduling (`gx=1, gy=3`, col 2 row 4)
+- Or: **OpenClaw cron schedule** — War Room 7am daily, Monitoring as a watchdog
+
+### Gotchas for Next Session
+- Monitoring report schema: `checked_at`, `overall_status` (green/yellow/red), `systems` (list with `name`, `key`, `status`, `detail`), `alerts` (list[str]), `summary` (str), `report_path`
+- Stale threshold is hardcoded at 24h (`STALE_HOURS = 24` in agent file)
+- Room staleness check reads the file's mtime, not a field in the JSON — works even if schemas differ across rooms
+- Anthropic API check hits `GET https://api.anthropic.com/v1/models` with `x-api-key` + `anthropic-version: 2023-06-01` headers
+- Ollama unavailable = yellow (not red) — Claude fallback handles it, so it's degraded not broken
+- Monitoring is standalone — does not feed any other room
+
+---
+
 ## Session: 2026-05-17 — War Room
 
 ### What We Built
