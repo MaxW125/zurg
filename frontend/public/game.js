@@ -146,17 +146,27 @@ async function sendChat() {
 
     if (data.intent === 'research' && data.data?.niche) {
       state.brief = data.data;
-      toast('RESEARCH COMPLETE — ' + data.data.niche.toUpperCase());
-      if (state.autoDesign) setTimeout(() => runDesign(), 400);
+      // auto-design chained server-side: design is nested under data.data.design
+      if (data.data?.design?.image_path) {
+        state.design = data.data.design;
+        toast('RESEARCH + DESIGN COMPLETE — OPEN APPROVAL ROOM');
+        if (state.autoApproval) setTimeout(() => _runAutoApprove(), 400);
+        else setTimeout(() => openPanel('approval'), 600);
+      } else {
+        toast('RESEARCH COMPLETE — ' + data.data.niche.toUpperCase());
+        if (state.autoDesign) setTimeout(() => runDesign(), 400);
+      }
     } else if (data.intent === 'design' && data.data?.image_path) {
       state.design = data.data;
       toast('DESIGN READY' + (state.autoApproval ? ' — AUTO-APPROVING...' : ' — OPEN APPROVAL ROOM'));
       if (state.autoApproval) setTimeout(() => _runAutoApprove(), 400);
+      else setTimeout(() => openPanel('approval'), 600);
     } else if (data.intent === 'pipeline') {
       if (data.data?.brief)      state.brief  = data.data.brief;
       if (data.data?.image_path) state.design = data.data;
       toast('PIPELINE COMPLETE — REVIEW DESIGN IN APPROVAL ROOM');
       if (state.design && state.autoApproval) setTimeout(() => _runAutoApprove(), 400);
+      else if (state.design) setTimeout(() => openPanel('approval'), 600);
     } else if (data.intent === 'publish' && data.data?.product_url) {
       state.product = data.data;
       toast('PUBLISHED TO SHOPIFY');
@@ -173,6 +183,15 @@ async function sendChat() {
 
 // ── Research Panel ─────────────────────────────────────────────
 async function renderResearch(body) {
+  // Always sync state.brief from server so WhatsApp-triggered research shows up
+  try {
+    const r = await fetch(`${API}/api/rooms/research/latest-brief`);
+    if (r.ok) {
+      const b = await r.json();
+      if (b && b.niche) state.brief = b;
+    }
+  } catch (_) {}
+
   const briefHtml = state.brief ? `
     <div class="panel-section">
       <div class="panel-section-title">▶ CURRENT BRIEF</div>
@@ -384,12 +403,22 @@ function toggleAutoResearch() {
 function toggleAutoDesign() {
   state.autoDesign = !state.autoDesign;
   localStorage.setItem('autoDesign', state.autoDesign);
+  fetch(`${API}/api/rooms/pipeline/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auto_design: state.autoDesign }),
+  });
   renderPanel('design');
 }
 
 function toggleAutoApproval() {
   state.autoApproval = !state.autoApproval;
   localStorage.setItem('autoApproval', state.autoApproval);
+  fetch(`${API}/api/rooms/pipeline/config`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ auto_approval: state.autoApproval }),
+  });
   renderPanel('approval');
 }
 
@@ -403,6 +432,17 @@ function _autoToggleBtn(isAuto, onToggle) {
 
 // ── Approval Panel ─────────────────────────────────────────────
 async function renderApproval(body) {
+  // Sync latest design from server so WhatsApp-triggered designs show up
+  if (!state.design?.image_path) {
+    try {
+      const r = await fetch(`${API}/api/rooms/design/latest`);
+      if (r.ok) {
+        const d = await r.json();
+        if (d?.image_path) state.design = d;
+      }
+    } catch (_) {}
+  }
+
   const hasDesign  = state.design?.image_path;
   const hasProduct = state.product?.product_url;
 
@@ -1416,3 +1456,21 @@ function escHtml(str) {
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') closePanel();
 });
+
+// Sync auto mode flags from server on load (so browser matches server state)
+(async () => {
+  try {
+    const r = await fetch(`${API}/api/rooms/pipeline/config`);
+    if (r.ok) {
+      const cfg = await r.json();
+      if (cfg.auto_design !== undefined) {
+        state.autoDesign = cfg.auto_design;
+        localStorage.setItem('autoDesign', cfg.auto_design);
+      }
+      if (cfg.auto_approval !== undefined) {
+        state.autoApproval = cfg.auto_approval;
+        localStorage.setItem('autoApproval', cfg.auto_approval);
+      }
+    }
+  } catch (_) {}
+})();
