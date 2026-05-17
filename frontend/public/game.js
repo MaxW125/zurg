@@ -6,6 +6,7 @@ const state = {
   product:         null,   // from Factory (after approval)
   analyticsReport: null,   // from Analytics Room
   pricingReport:   null,   // from Pricing Room
+  csReport:        null,   // from CS Room
   chatHistory:     [],
   loading:         false,
   autoResearch:    localStorage.getItem('autoResearch')  === 'true',
@@ -33,6 +34,7 @@ function openPanel(room) {
     approval: '⚖️ APPROVAL ROOM',
     analytics: '📊 ANALYTICS ROOM',
     pricing:  '💰 PRICING ROOM',
+    cs:       '🎧 CS ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -48,7 +50,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -979,6 +981,134 @@ async function runPricing() {
   if (btn) btn.disabled = false;
 }
 
+// ── CS Panel ──────────────────────────────────────────────────
+async function renderCs(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING CS DATA...</div></div>`;
+
+  try {
+    const res = await fetch(`${API}/api/cs/status`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.report) state.csReport = data.report;
+    }
+  } catch (_) {}
+
+  _renderCsBody(body);
+}
+
+function _renderCsBody(body) {
+  const r = state.csReport;
+
+  if (!r) {
+    body.innerHTML = `
+      <div class="room-panel">
+        <div class="empty-state">NO CS REPORT YET.<br><br>CLICK RUN ANALYSIS TO SCAN ORDERS FOR ISSUES AND DRAFT CUSTOMER MESSAGES.</div>
+        <div class="panel-section">
+          <button class="btn btn-yellow" id="cs-btn" onclick="runCs()">▶ RUN ANALYSIS</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const attentionHtml = (r.attention_orders || []).length === 0
+    ? `<div class="empty-state">NO ORDERS NEED ATTENTION.</div>`
+    : (r.attention_orders || []).map((o, i) => `
+        <div style="padding:10px 0;border-bottom:1px solid #1a0a2e">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-size:6px;color:var(--text);flex:1">${escHtml(o.order_number)} — ${escHtml(o.customer_name)}</div>
+            <span style="font-size:5px;padding:2px 6px;background:#2a0a00;color:#ff6b35;border:1px solid #ff6b35;flex-shrink:0">${escHtml(o.issue_label)}</span>
+          </div>
+          <div style="font-size:6px;color:var(--text-dim);margin-bottom:6px">${escHtml((o.product_names || []).join(', '))} &nbsp;|&nbsp; ${escHtml(o.order_date)} &nbsp;|&nbsp; $${escHtml(o.total)}</div>
+          ${o.drafted_reply ? `
+          <div id="cs-reply-${i}" style="font-size:6px;line-height:1.8;color:var(--text);background:#0a001a;border:1px solid #2a0a3e;padding:8px;margin-bottom:6px;white-space:pre-wrap">${escHtml(o.drafted_reply)}</div>
+          <button onclick="copyCs('cs-reply-${i}')"
+                  style="font-family:'Press Start 2P',monospace;font-size:5px;padding:3px 8px;cursor:pointer;background:#001200;color:var(--green);border:1px solid var(--green)">
+            COPY MESSAGE
+          </button>` : `<div style="font-size:6px;color:var(--text-dim)">NO DRAFT AVAILABLE</div>`}
+        </div>`).join('');
+
+  const reviewHtml = (r.review_queue || []).length === 0
+    ? `<div class="empty-state">NO REVIEW REQUESTS QUEUED.</div>`
+    : (r.review_queue || []).map((rv, j) => `
+        <div style="padding:10px 0;border-bottom:1px solid #1a0a2e">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px">
+            <div style="font-size:6px;color:var(--text);flex:1">${escHtml(rv.order_number)} — ${escHtml(rv.customer_name)}</div>
+            <span style="font-size:5px;padding:2px 6px;background:#001a0a;color:var(--green);border:1px solid var(--green);flex-shrink:0">REVIEW REQUEST</span>
+          </div>
+          <div style="font-size:6px;color:var(--text-dim);margin-bottom:6px">${escHtml((rv.product_names || []).join(', '))} &nbsp;|&nbsp; fulfilled ${escHtml(rv.fulfilled_date)}</div>
+          ${rv.review_message ? `
+          <div id="cs-review-${j}" style="font-size:6px;line-height:1.8;color:var(--text);background:#0a001a;border:1px solid #2a0a3e;padding:8px;margin-bottom:6px;white-space:pre-wrap">${escHtml(rv.review_message)}</div>
+          <button onclick="copyCs('cs-review-${j}')"
+                  style="font-family:'Press Start 2P',monospace;font-size:5px;padding:3px 8px;cursor:pointer;background:#001200;color:var(--green);border:1px solid var(--green)">
+            COPY MESSAGE
+          </button>` : `<div style="font-size:6px;color:var(--text-dim)">NO DRAFT AVAILABLE</div>`}
+        </div>`).join('');
+
+  body.innerHTML = `
+    <div class="room-panel">
+      <div class="panel-section" style="border-color:#c0392b">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="panel-section-title" style="margin-bottom:0;color:#ff6b35">▶ ORDERS NEEDING ATTENTION</div>
+          <button onclick="runCs()" id="cs-btn"
+                  style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;background:#1a0500;color:#ff6b35;border:2px solid #c0392b">
+            ▶ REFRESH
+          </button>
+        </div>
+        <div style="font-size:6px;color:var(--text-dim);margin-bottom:8px">LAST RUN: ${escHtml(r.run_date || '—')} &nbsp;|&nbsp; ${r.orders_scanned || 0} ORDERS SCANNED &nbsp;|&nbsp; MODEL: ${escHtml(r.model_used || '—')}</div>
+        ${attentionHtml}
+        <div id="cs-run-status"></div>
+      </div>
+      <div class="panel-section">
+        <div class="panel-section-title" style="color:var(--green)">▶ REVIEW REQUEST QUEUE</div>
+        ${reviewHtml}
+      </div>
+    </div>`;
+}
+
+function copyCs(elementId) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent.trim())
+    .then(() => toast('COPIED TO CLIPBOARD'))
+    .catch(() => toast('COPY FAILED'));
+}
+
+async function runCs() {
+  if (state.loading) return;
+  state.loading = true;
+
+  const btn = document.getElementById('cs-btn');
+  const statusEl = document.getElementById('cs-run-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> SCANNING ORDERS + DRAFTING MESSAGES...</div>`;
+  else {
+    const body = document.getElementById('panel-body');
+    if (body) body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> SCANNING ORDERS + DRAFTING MESSAGES...</div></div>`;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/cs/run`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.error) {
+      toast('ERROR: ' + data.error);
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.csReport = data;
+      const attn = (data.attention_orders || []).length;
+      const rev = (data.review_queue || []).length;
+      toast(`CS SCAN DONE — ${attn} ISSUES, ${rev} REVIEW REQUESTS`);
+      _renderCsBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    toast('CS ERROR: ' + e.message);
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+
+  state.loading = false;
+  if (btn) btn.disabled = false;
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -1106,7 +1236,7 @@ function escHtml(str) {
     { cx: 512,  cy: 1536, gx: 0, gy: 1, built: true  },  // Approval
     { cx: 1536, cy: 1536, gx: 1, gy: 1, built: true  },  // Analytics
     { cx: 2560, cy: 1536, gx: 2, gy: 1, built: true  },  // Pricing
-    { cx: 3584, cy: 1536, gx: 3, gy: 1, built: false },  // CS
+    { cx: 3584, cy: 1536, gx: 3, gy: 1, built: true  },  // CS
     // Row 2
     { cx: 512,  cy: 2560, gx: 0, gy: 2, built: false },  // Shop Health
     { cx: 1536, cy: 2560, gx: 1, gy: 2, built: false },  // Media Bay
