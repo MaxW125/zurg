@@ -43,7 +43,7 @@
 > - Panel UI added to `frontend/public/game.js` (render function + openPanel title + runX function)
 > - Room div updated in `frontend/public/index.html` (remove coming-soon, add onclick)
 
-- [ ] Pricing Room — competitor price monitoring, dynamic repricing, margin protection
+- [x] Pricing Room — competitor price monitoring, dynamic repricing, margin protection
 - [ ] CS Room — handle Shopify customer messages, order issues, review requests
 - [ ] Shop Health Room — listing SEO refresh, stale listing detection
 - [ ] Media Bay — TikTok/Instagram content creation, Publer scheduling
