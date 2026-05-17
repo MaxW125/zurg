@@ -7,13 +7,13 @@
 - [x] Printify integration (mockup generation, flat design fallback)
 - [x] Designer background removal via rembg (real PNG transparency)
 - [x] Ollama dev mode (zero Anthropic charges during development)
-- [x] Shared chat memory across browser and WhatsApp
-- [x] OpenClaw WhatsApp routing wired up (disabled until real SIM)
+- [x] Shared chat memory across browser and WhatsApp — last_brief.json + last_design.json bridge WhatsApp-triggered runs to browser UI
+- [x] OpenClaw WhatsApp routing fully active — before_dispatch plugin routes all WhatsApp messages through Zurg API; two-stage notifications (immediate ack + design-ready text via notify.py)
 - [x] Approval Room — agent + auto/manual toggle + verdict storage + phase 1/2/3 thresholds
 - [x] Printify integration — mockup generation with correct shirt color (black default)
 - [x] rembg background removal — real PNG transparency on all generated designs
 - [x] Product catalog — T-Shirt, Hoodie, Long Sleeve mapped to Printify blueprints
-- [x] Full auto pipeline — per-room auto toggles chain research → design → approval → Shopify
+- [x] Full auto pipeline — research always auto-chains to designer → approval (no toggle, always on); WhatsApp and browser both trigger the same pipeline
 - [x] 4×4 map expansion — 16 room grid with 11 placeholder rooms
 - [x] Autonomous researcher loop — configurable daily cap, delay, live DDG market data, auto-triggers designer
 - [x] Analytics Room — live Shopify product/order data, pipeline metrics, LLM insights, delta comparison to previous reports, panel UI
@@ -22,6 +22,8 @@
 - [x] Agent identity system — `agents/brain.py` utility (`load_system_prompt(room, agent, fallback)`) loads room.md + identity.md from vault for all 6 active agents; edit personality in Obsidian, takes effect immediately on next run
 - [x] Vault folder structure — 16 room folders under `rooms/`, each with `room.md` (purpose/pipeline context) and `agents/<name>/identity.md` (personality/rules); identity.md files written for all 6 built agents
 - [x] Vault cleanup — eliminated `hot/` folder; data reorganised into `rooms/` subfolders: `rooms/research/briefs/`, `rooms/approval/verdicts/`, `rooms/analytics/reports/`, `rooms/captain/` (chat history + Shopify token doc)
+- [x] Mac Mini deployment — server running on dedicated machine, global Homebrew Python (no venv), launchd plist configured, restart-server.sh
+- [x] project notes + HANDOFF.md — comprehensive cold-start documentation and session handoff system
 
 ---
 
@@ -74,7 +76,7 @@
 
 | What | Where |
 |------|-------|
-| Brain / Obsidian vault | `~/Desktop/Obsidian Vaults/Zurg/` |
+| Brain / Obsidian vault | `~/Documents/Obsidian Vaults/Zurg/` |
 | Agent identity files | `rooms/<room>/agents/<agent>/identity.md` inside vault |
 | Room context files | `rooms/<room>/room.md` inside vault |
 | Research briefs | `rooms/research/briefs/brief_*.md` inside vault |
@@ -83,7 +85,7 @@
 | Researcher loop config | `rooms/research/research_config.json` inside vault |
 | CEO chat history | `rooms/captain/chat_history.json` inside vault |
 | Shopify token refresh doc | `rooms/captain/shopify-token.md` inside vault |
-| BRAIN_PATH env var | `~/zurg/.env` → `BRAIN_PATH=~/Desktop/Obsidian Vaults/Zurg` |
+| BRAIN_PATH env var | `~/zurg/.env` → `BRAIN_PATH=~/Documents/Obsidian Vaults/Zurg` |
 | System prompt loader | `agents/brain.py` → `load_system_prompt(room, agent, fallback)` |
 | Server | FastAPI on port 9000 — `python main.py` from `~/zurg/` |
 
