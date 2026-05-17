@@ -4,6 +4,41 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-17 — War Room
+
+### What We Built
+**War Room** — cross-room synthesis + prioritised action plan (10th room built).
+
+- **`agents/war_room_mvp.py`** — loads `latest_report.json` from each built data room (analytics, pricing, shop_health, cs); builds a unified briefing string with per-room summaries; sends to LLM (Ollama → Claude fallback) for synthesis; parses response into `summary`, `fix`, `launch`, `watch` arrays (with a `_flatten()` normaliser that coerces LLM objects to strings); saves `latest_report.json` + timestamped `.md` to vault at `rooms/war_room/reports/`.
+- **`routers/war_room.py`** — `POST /api/war-room/run`, `GET /api/war-room/status`
+- **`main.py`** — war_room router wired in
+- **`game.js`** — `renderWarRoom`, `_renderWarRoomBody`, `runWarRoom`; `warRoomReport` state; `⚔️ WAR ROOM` panel title; `warroom` key in titles/renders; `built: true` at `gx=1, gy=3`
+- **`index.html`** — War Room at col 2, row 4 — coming-soon markup replaced with live `onclick="openPanel('warroom')"`
+- **Vault** — `rooms/war_room/room.md` + `rooms/war_room/agents/strategist/identity.md` written
+
+### Bugs Hit
+- Ollama returned `fix` items as objects (`{"product":..., "action":...}`) instead of strings. Fixed by adding `_flatten()` normaliser that joins dict values with ` — ` separator. All three buckets (fix/launch/watch) now guaranteed to be `list[str]`.
+
+### Current State
+- 10 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health, War Room
+- War Room tested end-to-end: `POST /api/war-room/run` synthesised all 4 data rooms (analytics, pricing, shop_health, cs) into clean action plan — summary + 1 fix + 2 launch + 1 watch
+- `GET /api/war-room/status` returns cached report correctly
+- Both endpoints confirmed in OpenAPI
+
+### What's Next
+- **Media Bay** — TikTok/Instagram content creation, Publer scheduling (`gx=1, gy=2`, col 2 row 3)
+- Or: **OpenClaw cron schedule** — wire War Room to run daily at 7am
+- Or: **Monitoring Room** — system health alerts, spend warnings, API failure detection (`gx=2, gy=2`)
+
+### Gotchas for Next Session
+- War Room report schema: `run_date`, `model_used`, `summary` (str), `fix` (list[str]), `launch` (list[str]), `watch` (list[str]), `rooms_included` (list of room keys with data), `report_path`
+- Agent identity file: `rooms/war_room/agents/strategist/identity.md` — agent name is "strategist" (not "war_room")
+- `_flatten()` normaliser handles LLM returning dicts instead of strings — safe to keep as-is
+- War Room is read-only — it only reads other rooms' latest_report.json, never triggers them
+- If a room has no report yet, the War Room skips it cleanly (noted as missing in the briefing)
+
+---
+
 ## Session: 2026-05-17 — Shop Health Room
 
 ### What We Built

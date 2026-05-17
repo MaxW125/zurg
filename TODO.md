@@ -49,7 +49,7 @@
 - [x] Shop Health Room — listing SEO refresh, stale listing detection
 - [ ] Media Bay — TikTok/Instagram content creation, Publer scheduling
 - [ ] Monitoring Room — system health alerts, spend warnings, API failure detection
-- [ ] War Room — daily 7am synthesis ritual, consensus action plan across all rooms
+- [x] War Room — daily 7am synthesis ritual, consensus action plan across all rooms
 - [ ] Radar Bay — proposes system improvements, monitors agent performance
 - [ ] Armory — converts proposals into SKILL.md files in OpenClaw workspace
 - [ ] Memory Room — brain compression, ChromaDB re-indexing, cold storage
