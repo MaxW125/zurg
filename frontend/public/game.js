@@ -1489,12 +1489,12 @@ function escHtml(str) {
     { cx: 3584, cy: 1536, gx: 3, gy: 1, built: true  },  // CS
     // Row 2
     { cx: 512,  cy: 2560, gx: 0, gy: 2, built: true  },  // Shop Health
-    { cx: 1536, cy: 2560, gx: 1, gy: 2, built: false },  // Media Bay
+    { cx: 1536, cy: 2560, gx: 1, gy: 2, built: true  },  // War Room
     { cx: 2560, cy: 2560, gx: 2, gy: 2, built: false },  // Monitoring
     { cx: 3584, cy: 2560, gx: 3, gy: 2, built: false },  // Radar Bay
     // Row 3
     { cx: 512,  cy: 3584, gx: 0, gy: 3, built: false },  // Armory
-    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: true  },  // War Room
+    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: false },  // Media Bay
     { cx: 2560, cy: 3584, gx: 2, gy: 3, built: false },  // Memory Room
     { cx: 3584, cy: 3584, gx: 3, gy: 3, built: false },  // Treasury
   ];
