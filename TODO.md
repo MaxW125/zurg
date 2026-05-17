@@ -47,8 +47,8 @@
 - [x] CS Room — handle Shopify customer messages, order issues, review requests
   - [ ] End-to-end test once store has real orders (unfulfilled 3+ days, fulfilled 7–60 days, cancelled/refunded)
 - [x] Shop Health Room — listing SEO refresh, stale listing detection
-- [ ] Media Bay — TikTok/Instagram content creation, Publer scheduling
-- [ ] Monitoring Room — system health alerts, spend warnings, API failure detection
+- [ ] Media Bay — TikTok/Instagram content creation, Publer scheduling (`gx=1, gy=3`, col 2 row 4)
+- [ ] Monitoring Room — system health alerts, spend warnings, API failure detection (`gx=2, gy=2`, col 3 row 3)
 - [x] War Room — daily 7am synthesis ritual, consensus action plan across all rooms
 - [ ] Radar Bay — proposes system improvements, monitors agent performance
 - [ ] Armory — converts proposals into SKILL.md files in OpenClaw workspace
