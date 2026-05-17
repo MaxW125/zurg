@@ -4,6 +4,40 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-16 — CS Room
+
+### What We Built
+**CS Room** — customer service triage + review request drafting (8th room built).
+
+- **`agents/cs_room_mvp.py`** — fetches all Shopify orders, categorises into two buckets: (1) attention queue (unfulfilled 3+ days, cancelled, refunded/partially_refunded) and (2) review request queue (fulfilled orders 7–60 days old with an email). Batches all orders into one LLM prompt and parses drafted messages back per order. Saves latest_report.json + timestamped .md to vault at `rooms/cs/reports/`.
+- **`routers/cs.py`** — `POST /api/cs/run`, `GET /api/cs/status`
+- **`main.py`** — cs router wired in
+- **`game.js`** — `renderCs`, `_renderCsBody`, `runCs`, `copyCs`; `csReport` state; `🎧 CS ROOM` panel title; `built: true` in ROOMS at `gx=3, gy=1`
+- **`index.html`** — CS Room at col 4, row 2 — coming-soon markup replaced with live `onclick="openPanel('cs')"`
+- **Vault** — `rooms/cs/room.md` + `rooms/cs/agents/cs/identity.md` written
+
+### Bugs Hit
+- `.env` BRAIN_PATH has a space in the path (`Obsidian Vaults/Zurg`) — shell variable expansion with `cut -d= -f2-` strips the path incorrectly. Fixed by hardcoding the path string directly in the bash command with quotes.
+- Stray `"\n/"` directory created by the failed first vault attempt. Not committed — excluded from git add.
+
+### Current State
+- 8 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS
+- CS Room tested end-to-end: `POST /api/cs/run` returns correct JSON (0 orders on fresh store — no Shopify error)
+- Both `/api/cs/run` and `/api/cs/status` confirmed in OpenAPI
+- CS Room at grid position col 4, row 2 (gx=3, gy=1) — last room in row 2, completing that row
+
+### What's Next
+- **Shop Health Room** — listing SEO refresh, stale listing detection (`gx=0, gy=2`, col 1 row 3)
+- CS Room can be tested properly once the store has real orders (unfulfilled 3+ days, fulfilled 7–60 days, etc.)
+
+### Gotchas for Next Session
+- CS report schema: `attention_orders` (list with `order_number`, `customer_name`, `issue_label`, `product_names`, `order_date`, `total`, `drafted_reply`) and `review_queue` (list with `order_number`, `customer_name`, `product_names`, `fulfilled_date`, `review_message`)
+- LLM batch parsing: one prompt for all orders, responses parsed by `[0]`, `[1]`, `[R0]`, `[R1]` prefixes
+- CS Room is independent — does not feed into the research → design → approval → factory pipeline
+- The stray `"\n/"` directory is still in the working tree (untracked) — can be deleted with `rm -rf $'\n/'` from the zurg directory if it bothers you
+
+---
+
 ## Session: 2026-05-17 — Pricing Room
 
 ### What We Built
