@@ -116,6 +116,7 @@ Write a short 1-sentence acknowledgement of what you're about to do."""
             direction = (await call_local(extract_prompt, system="Output only the niche topic, 2-5 words max. Nothing else.")).strip()
         except Exception:
             direction = input.get("direction", message)
+
         data = await run_researcher({"direction": direction})
         _save_last_brief(data)
 
@@ -125,14 +126,7 @@ Write a short 1-sentence acknowledgement of what you're about to do."""
         data["design"] = design
         awaiting_approval = True
 
-        summary_prompt = f"""Research and design complete.
-Niche: {data['niche']} | Product: {data['product_type']}
-Design saved at: {design.get('image_path', 'unknown')}
-Write 2 sentences: summarise the niche found, then say the design is ready for approval."""
-        try:
-            response = await call_local(summary_prompt, system=identity)
-        except Exception:
-            response = await call_claude(summary_prompt, system=identity)
+        response = "Design is ready — open the Approval Room to approve or deny."
 
     elif intent == "design":
         brief = input.get("brief", {})
@@ -144,7 +138,7 @@ Write 2 sentences: summarise the niche found, then say the design is ready for a
             awaiting_approval = True
             summary_prompt = f"""Design complete. Image saved at: {data['image_path']}
 Niche: {data['niche']} | Product: {data['product_type']}
-Write 1 sentence telling the owner the design is ready and asking them to approve or reject it."""
+Write 1 sentence telling the owner the design is ready and asking them to approve or reject it. You are the CEO — the Designer agent did this work, not you."""
             try:
                 response = await call_local(summary_prompt, system=identity)
             except Exception:
@@ -162,7 +156,7 @@ Write 1 sentence telling the owner the design is ready and asking them to approv
         summary_prompt = f"""Full pipeline complete.
 Niche: {brief['niche']} | Product: {brief['product_type']}
 Design saved at: {data['image_path']}
-Write 2 sentences: summarise the niche found, then tell the owner the design is ready for approval."""
+Write 2 sentences: summarise the niche the Researcher found, then tell the owner the Designer has a design ready for approval. You are the CEO — speak as the boss who delegated, not the one who did the work."""
         try:
             response = await call_local(summary_prompt, system=identity)
         except Exception:
@@ -178,7 +172,7 @@ Write 2 sentences: summarise the niche found, then tell the owner the design is 
             summary_prompt = f"""Product published to Shopify.
 Title: {data['title']}
 URL: {data['product_url']}
-Write 1 sentence confirming the product is live and sharing the admin URL."""
+Write 1 sentence confirming the Factory agent got the product live and share the admin URL. You are the CEO — speak as the boss who delegated, not the one who did the work."""
             try:
                 response = await call_local(summary_prompt, system=identity)
             except Exception:

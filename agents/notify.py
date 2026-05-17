@@ -16,30 +16,34 @@ import shutil
 OWNER_NUMBER = os.getenv("OWNER_PHONE", "")
 
 
+OPENCLAW_PATH = "/opt/homebrew/bin/openclaw"
+
+
 def _send_sync(message: str) -> bool:
     """Synchronous send via OpenClaw CLI. Returns True on success."""
-    openclaw = shutil.which("openclaw")
+    openclaw = OPENCLAW_PATH if shutil.os.path.isfile(OPENCLAW_PATH) else shutil.which("openclaw")
     if not openclaw:
-        print("[notify] openclaw not found in PATH — skipping WhatsApp notification")
+        print("[notify] openclaw not found — skipping WhatsApp notification")
         return False
 
     import subprocess
+    env = {**os.environ, "PATH": "/opt/homebrew/bin:/opt/homebrew/Cellar/node/26.0.0/bin:/usr/local/bin:/usr/bin:/bin"}
     try:
         result = subprocess.run(
             [
                 openclaw, "message", "broadcast",
                 "--channel", "whatsapp",
-                "--account", "zurg",
                 "--targets", OWNER_NUMBER,
                 "--message", message,
             ],
             capture_output=True,
             text=True,
             timeout=15,
+            env=env,
         )
-        if result.returncode == 0:
+        if result.returncode == 0 and "0 failed" not in result.stdout:
             return True
-        print(f"[notify] WhatsApp send failed: {result.stderr.strip()[:200]}")
+        print(f"[notify] WhatsApp send failed: {result.stdout.strip()[:200]}")
         return False
     except Exception as e:
         print(f"[notify] WhatsApp send error: {e}")

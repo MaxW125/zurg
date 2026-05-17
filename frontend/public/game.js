@@ -84,7 +84,8 @@ function redrawChatHistory() {
   state.chatHistory.forEach(msg => {
     el.appendChild(buildChatBubble(msg.role, msg.text));
   });
-  el.scrollTop = el.scrollHeight;
+  const panel = document.getElementById('panel-body');
+  setTimeout(() => { if (panel) panel.scrollTop = panel.scrollHeight; }, 400);
 }
 
 function buildChatBubble(role, text) {
@@ -101,7 +102,8 @@ function appendChat(role, text) {
   const el = document.getElementById('chat-history');
   if (!el) return;
   el.appendChild(buildChatBubble(role, text));
-  el.scrollTop = el.scrollHeight;
+  const panel = document.getElementById('panel-body');
+  if (panel) panel.scrollTop = panel.scrollHeight;
 }
 
 function setChatDisabled(disabled) {
@@ -130,7 +132,8 @@ async function sendChat() {
     <div class="chat-msg-label">ZURG</div>
     <div class="chat-msg-text"><span class="chat-cursor"></span></div>`;
   el?.appendChild(bubble);
-  el && (el.scrollTop = el.scrollHeight);
+  const panel = document.getElementById('panel-body');
+  if (panel) panel.scrollTop = panel.scrollHeight;
 
   let response = '';
   try {
