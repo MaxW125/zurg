@@ -7,6 +7,7 @@ const state = {
   analyticsReport: null,   // from Analytics Room
   pricingReport:   null,   // from Pricing Room
   csReport:        null,   // from CS Room
+  shopHealthReport: null,  // from Shop Health Room
   chatHistory:     [],
   loading:         false,
   autoResearch:    localStorage.getItem('autoResearch')  === 'true',
@@ -34,7 +35,8 @@ function openPanel(room) {
     approval: '⚖️ APPROVAL ROOM',
     analytics: '📊 ANALYTICS ROOM',
     pricing:  '💰 PRICING ROOM',
-    cs:       '🎧 CS ROOM',
+    cs:         '🎧 CS ROOM',
+    shophealth: '🏥 SHOP HEALTH ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -50,7 +52,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -1109,6 +1111,150 @@ async function runCs() {
   if (btn) btn.disabled = false;
 }
 
+// ── Shop Health Panel ─────────────────────────────────────────
+async function renderShopHealth(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING SHOP HEALTH DATA...</div></div>`;
+
+  try {
+    const res = await fetch(`${API}/api/shop-health/status`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.report) state.shopHealthReport = data.report;
+    }
+  } catch (_) {}
+
+  _renderShopHealthBody(body);
+}
+
+function _renderShopHealthBody(body) {
+  const r = state.shopHealthReport;
+
+  if (!r) {
+    body.innerHTML = `
+      <div class="room-panel">
+        <div class="empty-state">NO HEALTH REPORT YET.<br><br>CLICK RUN AUDIT TO SCAN ALL ACTIVE LISTINGS FOR SEO ISSUES AND STALENESS.</div>
+        <div class="panel-section">
+          <button class="btn btn-yellow" id="shophealth-btn" onclick="runShopHealth()">▶ RUN AUDIT</button>
+        </div>
+      </div>`;
+    return;
+  }
+
+  const products = r.products || [];
+  const critical = products.filter(p => p.severity === 'critical');
+  const warning  = products.filter(p => p.severity === 'warning');
+  const ok       = products.filter(p => p.severity === 'ok');
+
+  function severityBadge(severity) {
+    if (severity === 'critical') return `<span style="font-size:5px;padding:2px 6px;background:#2a0000;color:#ff4444;border:1px solid #ff4444;flex-shrink:0">CRITICAL</span>`;
+    if (severity === 'warning')  return `<span style="font-size:5px;padding:2px 6px;background:#1a1000;color:#ffaa00;border:1px solid #ffaa00;flex-shrink:0">WARNING</span>`;
+    return `<span style="font-size:5px;padding:2px 6px;background:#001a00;color:var(--green);border:1px solid var(--green);flex-shrink:0">OK</span>`;
+  }
+
+  function issueBadges(issues) {
+    return (issues || []).map(iss => {
+      const col = (iss === 'NO SALES 30+ DAYS' || iss === 'STALE LISTING') ? '#ff4444' : '#ffaa00';
+      return `<span style="font-size:5px;padding:1px 5px;border:1px solid ${col};color:${col};margin-right:3px;margin-bottom:3px;display:inline-block">${escHtml(iss)}</span>`;
+    }).join('');
+  }
+
+  function productCard(p) {
+    return `
+      <div style="padding:10px 0;border-bottom:1px solid #1a0a2e">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px">
+          <div style="font-size:6px;color:var(--text);flex:1">${escHtml(p.title)}</div>
+          ${severityBadge(p.severity)}
+        </div>
+        <div style="font-size:6px;color:var(--text-dim);margin-bottom:5px">
+          ${p.total_sales} SALES &nbsp;|&nbsp; ${p.days_live}D LIVE &nbsp;|&nbsp;
+          ${p.days_since_sale !== null ? p.days_since_sale + 'D SINCE LAST SALE' : 'NEVER SOLD'} &nbsp;|&nbsp;
+          ${p.tag_count} TAGS &nbsp;|&nbsp; ${p.desc_length} CHARS DESC
+        </div>
+        <div style="margin-bottom:5px">${issueBadges(p.issues)}</div>
+        ${p.recommendation ? `<div style="font-size:6px;line-height:1.8;color:var(--text);background:#0a001a;border:1px solid #2a0a3e;padding:8px">${escHtml(p.recommendation)}</div>` : ''}
+      </div>`;
+  }
+
+  const criticalHtml = critical.length === 0
+    ? `<div class="empty-state">NO CRITICAL ISSUES.</div>`
+    : critical.map(productCard).join('');
+
+  const warningHtml = warning.length === 0
+    ? `<div class="empty-state">NO SEO WARNINGS.</div>`
+    : warning.map(productCard).join('');
+
+  const okHtml = ok.length === 0
+    ? `<div class="empty-state">NO HEALTHY LISTINGS.</div>`
+    : ok.map(p => `
+        <div style="padding:6px 0;border-bottom:1px solid #0a1a0a;font-size:6px;color:var(--text-dim)">
+          ✓ ${escHtml(p.title)} &nbsp;|&nbsp; ${p.total_sales} sales &nbsp;|&nbsp; ${p.tag_count} tags
+        </div>`).join('');
+
+  body.innerHTML = `
+    <div class="room-panel">
+      <div class="panel-section" style="border-color:#c0392b">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="panel-section-title" style="margin-bottom:0;color:#ff4444">▶ CRITICAL ISSUES</div>
+          <button onclick="runShopHealth()" id="shophealth-btn"
+                  style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;background:#1a0000;color:#ff4444;border:2px solid #c0392b">
+            ▶ REFRESH
+          </button>
+        </div>
+        <div style="font-size:6px;color:var(--text-dim);margin-bottom:8px">
+          LAST RUN: ${escHtml(r.run_date || '—')} &nbsp;|&nbsp;
+          ${r.products_scanned || 0} LISTINGS SCANNED &nbsp;|&nbsp;
+          ${r.flagged_count || 0} FLAGGED &nbsp;|&nbsp;
+          MODEL: ${escHtml(r.model_used || '—')}
+        </div>
+        ${criticalHtml}
+        <div id="shophealth-run-status"></div>
+      </div>
+      <div class="panel-section" style="border-color:#aa7700">
+        <div class="panel-section-title" style="color:#ffaa00">▶ SEO WARNINGS</div>
+        ${warningHtml}
+      </div>
+      <div class="panel-section">
+        <div class="panel-section-title" style="color:var(--green)">▶ HEALTHY LISTINGS</div>
+        ${okHtml}
+      </div>
+    </div>`;
+}
+
+async function runShopHealth() {
+  if (state.loading) return;
+  state.loading = true;
+
+  const btn = document.getElementById('shophealth-btn');
+  const statusEl = document.getElementById('shophealth-run-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> SCANNING LISTINGS...</div>`;
+  else {
+    const body = document.getElementById('panel-body');
+    if (body) body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> SCANNING LISTINGS...</div></div>`;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/shop-health/run`, { method: 'POST' });
+    const data = await res.json();
+
+    if (data.error) {
+      toast('ERROR: ' + data.error);
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.shopHealthReport = data;
+      const flagged = data.flagged_count || 0;
+      toast(`SHOP HEALTH DONE — ${flagged} LISTING${flagged !== 1 ? 'S' : ''} FLAGGED`);
+      _renderShopHealthBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    toast('SHOP HEALTH ERROR: ' + e.message);
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+
+  state.loading = false;
+  if (btn) btn.disabled = false;
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -1238,7 +1384,7 @@ function escHtml(str) {
     { cx: 2560, cy: 1536, gx: 2, gy: 1, built: true  },  // Pricing
     { cx: 3584, cy: 1536, gx: 3, gy: 1, built: true  },  // CS
     // Row 2
-    { cx: 512,  cy: 2560, gx: 0, gy: 2, built: false },  // Shop Health
+    { cx: 512,  cy: 2560, gx: 0, gy: 2, built: true  },  // Shop Health
     { cx: 1536, cy: 2560, gx: 1, gy: 2, built: false },  // Media Bay
     { cx: 2560, cy: 2560, gx: 2, gy: 2, built: false },  // Monitoring
     { cx: 3584, cy: 2560, gx: 3, gy: 2, built: false },  // Radar Bay

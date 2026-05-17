@@ -4,6 +4,42 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-17 — Shop Health Room
+
+### What We Built
+**Shop Health Room** — listing SEO audit + staleness detection (9th room built).
+
+- **`agents/shop_health_room_mvp.py`** — fetches all active Shopify products + orders; audits each listing for: title length (TITLE TOO SHORT < 20 chars, TITLE TOO LONG > 100 chars), tag count (NEEDS MORE TAGS < 3), description depth (THIN DESCRIPTION < 50 chars), sales staleness (NO SALES 30+ DAYS if live ≥ 30 days with 0 sales, STALE LISTING if last sale ≥ 45 days ago). Sends flagged listings to LLM (Ollama → Claude fallback) for per-product fix recommendations. Saves latest_report.json + timestamped .md to vault at `rooms/shop_health/reports/`.
+- **`routers/shop_health.py`** — `POST /api/shop-health/run`, `GET /api/shop-health/status`
+- **`main.py`** — shop_health router wired in
+- **`game.js`** — `renderShopHealth`, `_renderShopHealthBody`, `runShopHealth`; `shopHealthReport` state; `🏥 SHOP HEALTH ROOM` panel title; `shophealth` key in titles/renders; `built: true` at `gx=0, gy=2`
+- **`index.html`** — Shop Health Room at col 1, row 3 — coming-soon markup replaced with live `onclick="openPanel('shophealth')"`
+- **Vault** — `rooms/shop_health/room.md` + `rooms/shop_health/agents/shop_health/identity.md` written
+
+### Bugs Hit
+- None. Clean build first pass.
+
+### Current State
+- 9 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health
+- Shop Health tested end-to-end: `POST /api/shop-health/run` correctly audited the live Ferret Enthusiasts T-Shirt (3 days old, 5 tags, 279-char desc → severity: ok, no flags — correct, too new to flag)
+- Both `/api/shop-health/run` and `/api/shop-health/status` confirmed in OpenAPI
+- `GET /api/shop-health/status` correctly returns the cached report after first run
+- Shop Health Room at grid position col 1, row 3 (gx=0, gy=2)
+
+### What's Next
+- **Media Bay** — TikTok/Instagram content creation, Publer scheduling (`gx=1, gy=2`, col 2 row 3)
+- Or: **War Room** — daily 7am synthesis ritual across all rooms (`gx=1, gy=3`)
+
+### Gotchas for Next Session
+- Shop Health report schema: `products_scanned`, `flagged_count`, `model_used`, `run_date`, `products` (list with `product_id`, `title`, `tag_count`, `tags`, `desc_length`, `days_live`, `total_sales`, `days_since_sale`, `issues`, `severity`, `recommendation`)
+- Severity values: `"critical"` (NO SALES 30+ DAYS or STALE LISTING), `"warning"` (SEO issues only), `"ok"` (no issues)
+- `model_used` is `"none"` when there are no flagged products (LLM skipped cleanly)
+- `days_since_sale` is `null` (not 0) when a product has never sold — rendered as "NEVER SOLD" in UI
+- Shop Health is standalone — does not feed the main pipeline
+- CS Room still needs real orders to test properly (unfulfilled 3+ days, fulfilled 7–60 days, cancelled/refunded)
+
+---
+
 ## Session: 2026-05-16 — CS Room
 
 ### What We Built
