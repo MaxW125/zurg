@@ -78,6 +78,14 @@
 - [ ] Reviews integration — Judge.me or Yotpo listed in vision tech stack; nothing built or planned
 - [ ] LLM split: Haiku for simple tasks, Sonnet for complex — vision specifies two tiers; currently all agents use the same model regardless of complexity
 
+### Gap Items (Final Vision not yet tracked)
+- [ ] Approval Engine Phase 2 — reach 100 verdicts with >85% accuracy to unlock agent-predicted approvals (happens through use, no code needed)
+- [ ] Spend guardrails — Treasury is built but guardrails need to be tested and verified end-to-end
+- [ ] Publish first real product to Shopify — pipeline exists but nothing live yet
+- [ ] 7-day autonomous run — run the system hands-off for 7 days, fix whatever breaks (Definition of Done milestone)
+- [ ] Design feedback loop — after 10–20 design cycles, review what Zurg approved/rejected and tune the approval agent's taste model
+- [ ] Wire Publer to zurg-account@example.com — Media Bay is built but Publer account needs migrating before social posts can be scheduled
+
 ---
 
 ## Key File Locations (for new sessions)
