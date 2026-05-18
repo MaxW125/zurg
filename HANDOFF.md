@@ -4,6 +4,40 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-18 — Todo Cleanup + Priority List
+
+### What We Did
+- Wired and verified all 6 cron jobs via `cron_runner.py` (War Room 7am, CEO 8am, Analytics midnight, Pricing Mon 6am, Shop Health Sun+Wed 6am, Radar Bay Sun 6am)
+- Fixed cron briefings bypassing intent classification (was misrouting briefing prompts as research jobs)
+- Fixed `notify.py` success check that was logging false failures
+- Removed dead Shopify OAuth callback with hardcoded credentials from `main.py`
+- Added daily/weekly reporting mode — text Zurg "switch to weekly" to accumulate Mon–Sat, send one Sunday summary
+- Audited TODO against Final Vision — added Gap Items section and a Priority List
+- Checked off: cron schedules, Zurg email, Shopify token, WhatsApp SIM, Telegram/iMessage
+
+### Current State
+- All 16 rooms built, all cron jobs scheduled and verified working
+- First real briefing delivered via WhatsApp — content correct, quality limited by Ollama (Anthropic API key is 401)
+- `reporting_config.json` initialised to `{"mode": "daily"}`
+- TODO has a clean Priority List (P1–P5) to work from next session
+
+### What's Next
+**P1 — Migrate all services to zurg-account@example.com:**
+Anthropic (fixes 401 + unlocks Claude), Google (Imagen), Printify, Publer, OpenClaw
+
+**P2 after that:**
+- LLM audit (Haiku vs Sonnet per agent)
+- Ideogram + Flux image fallbacks
+- Gelato fulfilment fallback
+- Reviews integration
+
+### Gotchas
+- Cron briefings use `source="cron_briefing"` — this bypasses intent classification in `chat.py` and goes straight to LLM. Do not remove this path.
+- Weekly log lives at `rooms/captain/weekly_briefings.json` — cleared after Sunday send
+- `notify.py` returncode check is now just `== 0` (was incorrectly checking for "0 failed" string)
+
+---
+
 ## Session: 2026-05-18 — Cron Schedules + Reporting Mode
 
 ### What We Built

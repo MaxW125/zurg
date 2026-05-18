@@ -27,6 +27,33 @@
 
 ---
 
+## Priority List (work through in order)
+
+**P1 — Unblocks everything**
+- [ ] Migrate all services to zurg-account@example.com — Anthropic, Google, Printify, Publer, OpenClaw
+
+**P2 — Makes the system production-ready**
+- [ ] LLM audit — right model per agent; Haiku for simple tasks (intent classification, acks), Sonnet for complex (research, briefings). Crosses off the LLM split Final Vision item.
+- [ ] Ideogram + Flux image fallbacks — Imagen fails silently right now; fallbacks mean designs never get stuck
+- [ ] Gelato fulfilment fallback — Printify backup
+- [ ] Reviews integration — Judge.me or Yotpo
+
+**P3 — Strengthens the platform**
+- [ ] ChromaDB — smarter brain; agents can search memory instead of reading flat files
+- [ ] Event-driven sprite movement — characters react to pipeline events via SSE
+- [ ] Room background images + agent sprites — pixel art PNG per room, sprite per agent
+
+**P4 — Needs real orders first**
+- [ ] CS Room end-to-end test — needs unfulfilled 3+ days, fulfilled 7–60 days, cancelled/refunded orders
+- [ ] Everbee real market data — code complete, waiting on their Open API approval
+- [ ] Better research methods — custom Etsy scraper or alternative data sources
+
+**P5 — Long term**
+- [ ] HashiCorp Vault — swap .env secrets; not urgent until real scale
+- [ ] Staging environment — second Zurg instance running against test data; swap real API calls for mocked ones via test-mode flags. Prevents buggy agent code from firing real Printify orders or hitting Shopify live. Useful once autonomous publishing is running regularly.
+
+---
+
 ## Up Next
 
 ### Quick Wins
