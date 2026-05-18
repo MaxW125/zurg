@@ -55,7 +55,7 @@
 - [x] Treasury — cost tracking per agent, ROI dashboard, spend guardrails
 
 ### Automation
-- [ ] OpenClaw cron schedules — War Room 7am, CEO 8am, Pricing Monday 6am, Shop Health Wednesday 6am, Radar Tuesday 6am
+- [x] OpenClaw cron schedules — War Room 7am, CEO 8am, Pricing Monday 6am, Shop Health Wed+Sun 6am, Radar Bay Sunday 6am — all wired via cron_runner.py; daily/weekly mode switchable by texting Zurg
 - [ ] Event-driven sprite movement — characters react to pipeline events via SSE
 
 ### Account Migration
