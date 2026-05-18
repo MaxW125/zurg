@@ -4,6 +4,53 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-18 — Cron Schedules + Reporting Mode
+
+### What We Built
+**`cron_runner.py`** — single entry point for all scheduled jobs. All cron logic lives here; nothing is split across other files.
+
+**Schedule (system crontab — `crontab -e` to view):**
+- War Room: daily 7am
+- CEO briefing: daily 8am
+- Analytics: daily midnight
+- Pricing: Monday 6am
+- Shop Health: Sunday + Wednesday 6am
+- Radar Bay: Sunday 6am
+
+**How the CEO briefing works:**
+- `cron_runner.py --job ceo` reads the latest `reports/latest_report.json` from all rooms, builds a context-rich prompt, POSTs to `/api/chat/ceo/instruct`, and calls `notify()` with the response
+- Zurg texts you the combined report — you never hear from individual rooms directly
+
+**Daily/weekly mode:**
+- Default is daily. Text Zurg "switch to weekly" or "go daily" — he writes to `rooms/captain/reporting_config.json` and confirms
+- Weekly mode: Mon–Sat CEO runs silently, appends daily summary to `rooms/captain/weekly_briefings.json`. Sunday it reads all 7, sends one combined report, clears the log.
+
+**Critical error alerts:**
+- If any room returns a 401/403/auth error, `cron_runner.py` routes an urgent message through the CEO → Zurg texts you immediately in his own voice
+
+**CEO agent change (`agents/ceo_room_mvp.py`):**
+- Added `set_reporting` intent to classifier + handler that writes `reporting_config.json`
+
+### Current State
+- All 16 rooms built, all 6 cron jobs wired and scheduled
+- `reporting_config.json` initialised to `{"mode": "daily"}`
+- Anthropic API key still 401 — agents fall back to Ollama. Briefings will work but quality depends on local model
+
+### What's Next
+- **Verify a real briefing** — wait for 8am or manually run `python3 cron_runner.py --job ceo` to test end-to-end
+- **Fix Anthropic API key** — account migration (Google, Printify, Everbee, OpenClaw, Publer still to migrate)
+- **Real SIM for WhatsApp** — briefings are ready but WhatsApp requires a dedicated SIM (Google Voice doesn't work)
+- **ChromaDB integration** — stub is ready in memory_room_mvp.py
+- **Approval Engine Phase 2** — need ~100 verdicts with >85% accuracy
+
+### Gotchas
+- `cron_runner.py` loads `.env` via python-dotenv — BRAIN_PATH must be set there or it falls back to hardcoded path
+- Weekly log (`weekly_briefings.json`) is cleared after Sunday send — if Sunday CEO crashes mid-run, log is not cleared and will carry over to next week (harmless but worth knowing)
+- The crontab no longer has the old `curl` analytics entry — replaced by `cron_runner.py --job analytics`
+- `main.py` has an uncommitted `/auth/callback` endpoint with hardcoded Shopify App credentials — left from the token refresh session, should be cleaned up
+
+---
+
 ## Session: 2026-05-18 — Shopify Token Automation
 
 ### What We Did
