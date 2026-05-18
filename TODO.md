@@ -107,3 +107,8 @@ The `SHOPIFY_ACCESS_TOKEN` in `.env` is an **online token that expires every 24 
 - [ ] Treasury showing real cost breakdown per agent
 - [ ] Radar Bay generating improvement proposals
 - [ ] Armory storing at least one self-generated skill
+
+---
+
+## Maintenance
+- [ ] Audit all rooms for functionality and security
