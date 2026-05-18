@@ -4,6 +4,48 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-18 — Treasury
+
+### What We Built
+**Treasury** — cost tracking, ROI dashboard, and daily spend guardrail (15th room built).
+
+- **`agents/treasury_mvp.py`** — `get_report()`: reads `costs.jsonl`, returns total_spend, today_spend, daily_cap_usd, cap_hit_today, total_runs, avg_cost, revenue (from analytics), roi (revenue/spend), by_room list. `get_config()` / `set_config()`: reads/writes `treasury_config.json`. `append_cost_entry(room, model, tokens_in, tokens_out)`: appends one JSONL line with ts/room/model/tokens_in/tokens_out/cost_usd. `check_daily_cap()`: raises `RuntimeError("daily_cap_exceeded: ...")` if today's spend ≥ cap. `get_today_spend()`: sums cost_usd for entries whose ts starts with today's ISO date.
+- **`agents/llm_client.py`** — `call_claude()` now takes an optional `room: str = "unknown"` param. Calls `_check_cap()` before the API call (cap breach raises RuntimeError, which callers' `except Exception` catches → stays on Ollama). After a successful call, calls `_log_cost(room, tokens_in, tokens_out)` using `message.usage.input_tokens` / `message.usage.output_tokens` from the Anthropic response. Both helpers import `treasury_mvp` lazily and swallow all errors so they never block agent calls.
+- **All 13 agent files** — each `call_claude()` fallback call updated with `room=` keyword arg: ceo, research, design, factory, approval, analytics, pricing, cs, shophealth, warroom, mediabay, radarbay, armory.
+- **`routers/treasury.py`** — `GET /api/treasury/report`, `GET /api/treasury/config`, `POST /api/treasury/config`
+- **`main.py`** — treasury router wired in
+- **`game.js`** — `treasuryReport` in state; `treasury: '💎 TREASURY'` in titles; added to renders dict; `renderTreasury`, `_renderTreasuryBody`, `refreshTreasury`, `saveTreasuryCap` functions; ROOMS array `gx:3, gy:3, built:true`; panel has 4-stat grid (total spend, ROI, revenue, avg cost/run), today progress bar (green→yellow→red), by-room table with run counts, daily cap config form.
+- **`index.html`** — Treasury at col 4, row 4 — coming-soon replaced with live `onclick="openPanel('treasury')"`
+- **Vault** — `rooms/treasury/room.md` updated; `rooms/treasury/agents/treasurer/identity.md` written; `rooms/treasury/costs.jsonl` (append-only ledger); `rooms/treasury/treasury_config.json`
+
+### Bugs Hit
+- None. Clean build first pass. All three endpoints verified working end-to-end.
+
+### Current State
+- 15 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health, War Room, Monitoring, Media Bay, Radar Bay, Armory, Treasury
+- `GET /api/treasury/report` returns correct zero-state when ledger is empty
+- `GET /api/treasury/config` returns `{"daily_cap_usd": 1.0}` (default)
+- `POST /api/treasury/config` writes config and returns new value
+- Cost logging verified: `append_cost_entry("research", "claude-sonnet-4-6", 1200, 400)` returns `$0.009600` (1200 × $0.000003 + 400 × $0.000015 — Sonnet 4.6 rates)
+- Daily cap tested: setting cap below current spend raises `RuntimeError` correctly
+- Ledger is clean (test entries removed)
+
+### What's Next
+- **Memory Room** — brain compression, ChromaDB re-indexing, cold storage (`gx=2, gy=3`, col 3 row 4)
+- Or: **OpenClaw cron schedules** — War Room 7am, Radar Bay Tuesday 6am, etc.
+- Or: **Run real Claude calls** (fix Anthropic API key, run a pipeline) to see Treasury populate with live data
+
+### Gotchas for Next Session
+- Ledger path: `$BRAIN_PATH/rooms/treasury/costs.jsonl` — append-only, never overwrite
+- Config path: `$BRAIN_PATH/rooms/treasury/treasury_config.json` — just `{"daily_cap_usd": float}`
+- Cost rates hardcoded in `treasury_mvp.py`: `COST_PER_INPUT_TOKEN = 3.00/1_000_000`, `COST_PER_OUTPUT_TOKEN = 15.00/1_000_000` (Sonnet 4.6 pricing)
+- Daily cap of `0` = disabled (check explicitly skipped). Setting cap below current spend immediately blocks Claude for the rest of the day.
+- Cap check uses `_check_cap()` in `llm_client.py` which imports treasury lazily — no circular import issues, and import errors are swallowed silently so a broken vault never blocks agents.
+- Streaming (`call_claude_stream`) is NOT instrumented — only used for CEO browser chat, token counts aren't easily captured from streaming. All agent non-streaming calls are logged.
+- Revenue for ROI comes from `rooms/analytics/reports/latest_report.json` → `revenue_total` field. If analytics has never run, `revenue` in the report is `0.0` and `roi` is `null`.
+
+---
+
 ## Session: 2026-05-18 — Armory
 
 ### What We Built

@@ -53,7 +53,7 @@
 - [x] Radar Bay — proposes system improvements, monitors agent performance
 - [x] Armory — converts proposals into SKILL.md files in OpenClaw workspace (`gx=0, gy=3`, col 1 row 4)
 - [ ] Memory Room — brain compression, ChromaDB re-indexing, cold storage
-- [ ] Treasury — cost tracking per agent, ROI dashboard, spend guardrails
+- [x] Treasury — cost tracking per agent, ROI dashboard, spend guardrails
 
 ### Automation
 - [ ] OpenClaw cron schedules — War Room 7am, CEO 8am, Pricing Monday 6am, Shop Health Wednesday 6am, Radar Tuesday 6am
