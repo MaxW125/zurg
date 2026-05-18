@@ -10,6 +10,8 @@ const state = {
   shopHealthReport: null,  // from Shop Health Room
   warRoomReport:    null,  // from War Room
   monitoringReport: null,  // from Monitoring Room
+  mediaBayReport:   null,  // from Media Bay
+  autoMediaBay:    localStorage.getItem('autoMediaBay') === 'true',
   chatHistory:     [],
   loading:         false,
   autoResearch:    localStorage.getItem('autoResearch')  === 'true',
@@ -41,6 +43,7 @@ function openPanel(room) {
     shophealth: '🏥 SHOP HEALTH ROOM',
     warroom:    '⚔️ WAR ROOM',
     monitoring: '🖥️ MONITORING ROOM',
+    mediabay:   '📱 MEDIA BAY',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -56,7 +59,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -615,8 +618,9 @@ async function approveDesign() {
     });
     const data = await res.json();
     state.product = data.product;
-    toast('APPROVED + PUBLISHED! CHECK SHOPIFY ADMIN.');
+    toast('APPROVED + PUBLISHED! CHECK SHOPIFY ADMIN.' + (state.autoMediaBay ? ' — GENERATING CONTENT...' : ''));
     renderPanel('approval');
+    if (state.autoMediaBay) setTimeout(() => _runAutoMediaBay(), 600);
   } catch (e) {
     if (statusEl) statusEl.innerHTML = `<div class="empty-state">ERROR: ${escHtml(e.message)}</div>`;
     if (appBtn) appBtn.disabled = false;
@@ -664,7 +668,8 @@ async function _runAutoApprove() {
     const data = await res.json();
     if (data.approved) {
       state.product = data.product;
-      toast('⚡ AGENT APPROVED + PUBLISHED TO SHOPIFY');
+      toast('⚡ AGENT APPROVED + PUBLISHED TO SHOPIFY' + (state.autoMediaBay ? ' — GENERATING CONTENT...' : ''));
+      if (state.autoMediaBay) setTimeout(() => _runAutoMediaBay(), 600);
     } else {
       state.design = null;
       toast('⚡ AGENT REJECTED — GENERATING NEW DESIGN...');
@@ -1470,6 +1475,199 @@ async function runMonitoring() {
   if (btn) btn.disabled = false;
 }
 
+// ── Media Bay Panel ────────────────────────────────────────────
+async function renderMediaBay(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING MEDIA BAY...</div></div>`;
+  if (!state.mediaBayReport) {
+    try {
+      const res = await fetch(`${API}/api/media-bay/status`);
+      const data = await res.json();
+      if (data.report) state.mediaBayReport = data.report;
+    } catch (e) { /* no cached report yet */ }
+  }
+  _renderMediaBayBody(body);
+}
+
+function _renderMediaBayBody(body) {
+  const r = state.mediaBayReport;
+  const publerConfigured = false; // rendered server-side — panel always shows generate button
+
+  const autoBtn = _autoToggleBtn(state.autoMediaBay, 'toggleAutoMediaBay');
+
+  const inputForm = `
+    <div class="panel-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div class="panel-section-title" style="margin-bottom:0">▶ GENERATE CONTENT</div>
+        ${autoBtn}
+      </div>
+      <div class="brief-field" style="margin-bottom:8px">MODE: <span>${state.autoMediaBay ? 'AUTO — RUNS AFTER FACTORY PUBLISH' : 'MANUAL — YOU TRIGGER'}</span></div>
+      <input id="mb-title" class="text-input" type="text"
+             placeholder="product title..."
+             value="${r ? escHtml(r.product_title || '') : (state.product?.title ? escHtml(state.product.title) : '')}">
+      <input id="mb-desc" class="text-input" type="text"
+             style="margin-top:6px"
+             placeholder="product description (optional)..."
+             value="">
+      <input id="mb-mockup" class="text-input" type="text"
+             style="margin-top:6px"
+             placeholder="mockup image URL (optional)...">
+      <div style="display:flex;gap:6px;margin-top:8px;align-items:center">
+        <select id="mb-type" style="font-family:'Press Start 2P',monospace;font-size:6px;background:#0d0d1a;color:#e0e0e0;border:2px solid #7c3aed;padding:6px;flex:1">
+          <option value="T-Shirt">T-SHIRT</option>
+          <option value="Hoodie">HOODIE</option>
+          <option value="Long Sleeve">LONG SLEEVE</option>
+          <option value="Mug">MUG</option>
+          <option value="Tote Bag">TOTE BAG</option>
+        </select>
+        <label style="font-size:6px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer">
+          <input type="checkbox" id="mb-schedule"> SCHEDULE VIA PUBLER
+        </label>
+      </div>
+      <button class="btn btn-purple" id="mediabay-btn" onclick="runMediaBay()" style="margin-top:10px">▶ GENERATE</button>
+      <div id="mediabay-run-status"></div>
+    </div>`;
+
+  if (!r) {
+    body.innerHTML = `<div class="room-panel">${inputForm}</div>`;
+    return;
+  }
+
+  const tiktok    = r.tiktok    || {};
+  const instagram = r.instagram || {};
+
+  const publerHtml = r.publer_results?.length
+    ? `<div style="margin-bottom:12px">
+        <div style="font-size:7px;color:var(--muted);margin-bottom:6px">PUBLER SCHEDULE</div>
+        ${(r.publer_results).map(p => {
+          const color = p.status === 'scheduled' ? '#00ff88' : '#ff6b6b';
+          return `<div style="font-size:6px;color:${color};padding:3px 0">${p.platform.toUpperCase()}: ${p.status.toUpperCase()}</div>`;
+        }).join('')}
+      </div>`
+    : '';
+
+  const copyBtn = (id) =>
+    `<button onclick="copyMediaContent('${id}')" style="font-family:'Press Start 2P',monospace;font-size:5px;padding:4px 8px;background:#1a1a2e;color:#a855f7;border:1px solid #7c3aed;cursor:pointer;margin-top:4px">📋 COPY</button>`;
+
+  body.innerHTML = `<div class="room-panel">
+    ${inputForm}
+
+    <div style="font-size:7px;color:var(--muted);margin-bottom:12px;margin-top:4px">
+      LAST RUN: ${escHtml(r.run_date || '—')} UTC · MODEL: ${escHtml(r.model_used || '—')} · ${escHtml(r.product_title || '—')}
+    </div>
+
+    ${publerHtml}
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:7px;color:#ff6b9d;margin-bottom:6px">🎵 TIKTOK / REEL</div>
+      <div style="background:#0d0d1a;border:2px solid #ff6b9d;padding:10px">
+        <div style="font-size:6px;color:#ff6b9d;margin-bottom:4px">HOOK</div>
+        <div style="font-size:7px;color:#e0e0e0;line-height:1.7;margin-bottom:8px">${escHtml(tiktok.hook || '')}</div>
+        <div style="font-size:6px;color:#ff6b9d;margin-bottom:4px">CAPTION</div>
+        <div style="font-size:6px;color:#e0e0e0;line-height:1.7;margin-bottom:8px" id="mb-tiktok-full">${escHtml(tiktok.full_post || '')}</div>
+        ${copyBtn('mb-tiktok-full')}
+      </div>
+    </div>
+
+    <div style="margin-bottom:12px">
+      <div style="font-size:7px;color:#e1306c;margin-bottom:6px">📸 INSTAGRAM</div>
+      <div style="background:#0d0d1a;border:2px solid #e1306c;padding:10px">
+        <div style="font-size:6px;color:#e1306c;margin-bottom:4px">HOOK</div>
+        <div style="font-size:7px;color:#e0e0e0;line-height:1.7;margin-bottom:8px">${escHtml(instagram.hook || '')}</div>
+        <div style="font-size:6px;color:#e1306c;margin-bottom:4px">CAPTION</div>
+        <div style="font-size:6px;color:#e0e0e0;line-height:1.7;margin-bottom:8px" id="mb-instagram-full">${escHtml(instagram.full_post || '')}</div>
+        ${copyBtn('mb-instagram-full')}
+      </div>
+    </div>
+  </div>`;
+}
+
+async function runMediaBay() {
+  if (state.loading) return;
+  state.loading = true;
+
+  const btn      = document.getElementById('mediabay-btn');
+  const statusEl = document.getElementById('mediabay-run-status');
+  const title    = document.getElementById('mb-title')?.value.trim();
+  const desc     = document.getElementById('mb-desc')?.value.trim() || '';
+  const mockup   = document.getElementById('mb-mockup')?.value.trim() || '';
+  const type     = document.getElementById('mb-type')?.value || 'T-Shirt';
+  const schedule = document.getElementById('mb-schedule')?.checked || false;
+
+  if (!title) {
+    toast('ENTER A PRODUCT TITLE FIRST.');
+    state.loading = false;
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> GENERATING CONTENT...</div>`;
+
+  try {
+    const res = await fetch(`${API}/api/media-bay/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product_title:       title,
+        product_description: desc,
+        product_type:        type,
+        mockup_url:          mockup,
+        schedule_post:       schedule,
+      }),
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      toast('MEDIA BAY ERROR: ' + data.error);
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.mediaBayReport = data;
+      const scheduled = data.publer_scheduled ? ' — SCHEDULED ON PUBLER' : '';
+      toast(`CONTENT READY — ${escHtml(data.product_title)}${scheduled}`);
+      _renderMediaBayBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    toast('MEDIA BAY ERROR: ' + e.message);
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+
+  state.loading = false;
+  if (btn) btn.disabled = false;
+}
+
+async function _runAutoMediaBay() {
+  if (!state.product?.title) return;
+  try {
+    const res = await fetch(`${API}/api/media-bay/run`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product_title:       state.product.title,
+        product_description: state.product.description || '',
+        product_type:        state.design?.product_type || 'T-Shirt',
+        mockup_url:          '',
+        schedule_post:       false,
+      }),
+    });
+    const data = await res.json();
+    if (!data.error) {
+      state.mediaBayReport = data;
+      toast('📱 CONTENT GENERATED — OPEN MEDIA BAY TO VIEW');
+    }
+  } catch (_) {}
+}
+
+function toggleAutoMediaBay() {
+  state.autoMediaBay = !state.autoMediaBay;
+  localStorage.setItem('autoMediaBay', state.autoMediaBay);
+  renderPanel('mediabay');
+}
+
+function copyMediaContent(elId) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent).then(() => toast('COPIED TO CLIPBOARD'));
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -1605,7 +1803,7 @@ function escHtml(str) {
     { cx: 3584, cy: 2560, gx: 3, gy: 2, built: false },  // Radar Bay
     // Row 3
     { cx: 512,  cy: 3584, gx: 0, gy: 3, built: false },  // Armory
-    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: false },  // Media Bay
+    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: true  },  // Media Bay
     { cx: 2560, cy: 3584, gx: 2, gy: 3, built: false },  // Memory Room
     { cx: 3584, cy: 3584, gx: 3, gy: 3, built: false },  // Treasury
   ];

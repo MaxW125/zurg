@@ -14,7 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import chat, rooms, approval, analytics, pricing, cs, shop_health, war_room, monitoring
+from routers import chat, rooms, approval, analytics, pricing, cs, shop_health, war_room, monitoring, media_bay
 app.include_router(chat.router)
 app.include_router(rooms.router)
 app.include_router(approval.router)
@@ -24,6 +24,7 @@ app.include_router(cs.router)
 app.include_router(shop_health.router)
 app.include_router(war_room.router)
 app.include_router(monitoring.router)
+app.include_router(media_bay.router)
 
 
 @app.get("/health")

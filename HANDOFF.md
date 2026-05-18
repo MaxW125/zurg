@@ -4,6 +4,45 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-18 — Media Bay
+
+### What We Built
+**Media Bay** — TikTok/Instagram content creation + Publer scheduling (12th room built).
+
+- **`agents/media_bay_mvp.py`** — takes product title, description, type, optional mockup URL; generates TikTok caption (hook + body + 15 hashtags) and Instagram caption (hook + body + 8 hashtags) via LLM (Ollama → Claude fallback); optionally POSTs to Publer API if `PUBLER_API_KEY` set; saves `latest_report.json` + timestamped `.md` to vault at `rooms/media_bay/reports/`. Report schema: `product_title`, `product_type`, `mockup_url`, `tiktok` (hook/caption/hashtags/full_post), `instagram` (hook/caption/hashtags/full_post), `publer_scheduled`, `publer_results`, `model_used`, `run_date`.
+- **`routers/media_bay.py`** — `POST /api/media-bay/run`, `GET /api/media-bay/status`
+- **`main.py`** — media_bay router wired in
+- **`game.js`** — `mediaBayReport` + `autoMediaBay` in state; title `📱 MEDIA BAY`; added to renders dict; `renderMediaBay`, `_renderMediaBayBody`, `runMediaBay`, `_runAutoMediaBay`, `toggleAutoMediaBay`, `copyMediaContent` functions; ROOMS array `gx:1, gy:3, built:true`; auto-chain wired in both manual approval and auto-approval paths (`state.autoMediaBay` flag stored in localStorage)
+- **`index.html`** — Media Bay at col 2, row 4 — coming-soon replaced with live `onclick="openPanel('mediabay')"`
+- **Vault** — `rooms/media_bay/room.md` + `rooms/media_bay/agents/media_agent/identity.md` written
+
+### Bugs Hit
+- LLM (Ollama) returned label format as `* **TIKTOK_HOOK**:` (bullet + bold) instead of clean `TIKTOK_HOOK:`. Fixed by adding `_normalize()` function that strips all markdown decoration from labels before parsing. Uses two regex passes: strip bold/italic from inline labels, collapse block-style heading labels to inline.
+- `{1,4}` in regex f-string was being evaluated as Python tuple `(1, 4)` — fixed by using `{{1,4}}` escaping throughout.
+
+### Current State
+- 12 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health, War Room, Monitoring, Media Bay
+- Tested end-to-end: `POST /api/media-bay/run` returns TikTok hook, caption, hashtags; Instagram hook + caption (hashtags sometimes embedded in caption by LLM — content is still present, just not in separate field)
+- `GET /api/media-bay/status` returns cached report correctly
+- Publer integration present but untested (no `PUBLER_API_KEY` in env — skips gracefully)
+- Both endpoints confirmed in OpenAPI
+
+### What's Next
+- **Radar Bay** — proposes system improvements, monitors agent performance (`gx=3, gy=2`, col 4 row 3)
+- Or: **Treasury** — cost tracking per agent, ROI dashboard (`gx=3, gy=3`, col 4 row 4)
+- Or: **OpenClaw cron schedules** — War Room 7am daily, Monitoring as watchdog
+
+### Gotchas for Next Session
+- Media Bay report schema: `product_title`, `product_type`, `mockup_url`, `tiktok` (dict), `instagram` (dict), `publer_scheduled` (bool), `publer_results` (list), `model_used`, `run_date`, `report_path`
+- `tiktok` and `instagram` dicts each have: `hook` (str), `caption` (str), `hashtags` (list[str]), `full_post` (str)
+- LLM sometimes embeds hashtags inline in caption body instead of on the `INSTAGRAM_HASHTAGS:` label — `hashtags` list may be empty but `full_post` will still contain them
+- `_normalize()` handles three label formats: clean (`LABEL: content`), bold-inline (`**LABEL**: content`, `* **LABEL**: content`), and block-heading (`### LABEL\ncontent`, `**LABEL**\ncontent`)
+- Publer API endpoint: `POST https://app.publer.io/api/v1/posts` with `Authorization: Bearer {PUBLER_API_KEY}` — untested, may need adjustment when key is available
+- Auto-chain: `state.autoMediaBay` localStorage flag; wired to both `approveDesign()` and `_runAutoApprove()` in game.js
+- Media Bay is standalone for content generation — does not feed any other room
+
+---
+
 ## Session: 2026-05-17 — Monitoring Room
 
 ### What We Built
