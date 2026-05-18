@@ -183,7 +183,7 @@ Synthesise this into a prioritised action plan. Output only the JSON specified."
         raw = await call_local(prompt, system=system)
         model_used = "ollama"
     except Exception:
-        raw = await call_claude(prompt, system=system)
+        raw = await call_claude(prompt, system=system, room="warroom")
         model_used = "claude"
 
     # Extract JSON from response

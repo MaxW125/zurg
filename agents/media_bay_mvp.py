@@ -119,7 +119,7 @@ Generate TikTok and Instagram captions following the exact format specified in y
         text = await call_local(prompt, system=system)
         model = "ollama"
     except Exception:
-        text = await call_claude(prompt, system=system)
+        text = await call_claude(prompt, system=system, room="mediabay")
         model = "claude"
 
     content = _parse_content(text)

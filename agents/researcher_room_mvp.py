@@ -144,7 +144,7 @@ Return the JSON brief."""
         raw = await call_local(prompt, system=system)
     except Exception:
         model_used = "claude"
-        raw = await call_claude(prompt, system=system)
+        raw = await call_claude(prompt, system=system, room="research")
 
     brief = _parse_brief(raw)
     brief_path = _save_brief(brief)

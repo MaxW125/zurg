@@ -72,7 +72,7 @@ async def run_designer(input: dict) -> dict:
         raw_response = await call_local(prompt_request, system=system)
     except Exception:
         model_used = "claude"
-        raw_response = await call_claude(prompt_request, system=system)
+        raw_response = await call_claude(prompt_request, system=system, room="design")
 
     # Parse shirt color recommendation from last line
     shirt_color = "black"

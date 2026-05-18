@@ -171,7 +171,7 @@ Then give a 2-3 sentence overall pricing strategy summary."""
         text = await call_local(prompt, system=system)
         return text, "ollama"
     except Exception:
-        text = await call_claude(prompt, system=system)
+        text = await call_claude(prompt, system=system, room="pricing")
         return text, "claude"
 
 

@@ -102,7 +102,7 @@ Write a short 1-sentence acknowledgement of what you're about to do."""
         ack = await call_local(ack_prompt, system=identity)
     except Exception:
         model_used = "claude"
-        ack = await call_claude(ack_prompt, system=identity)
+        ack = await call_claude(ack_prompt, system=identity, room="ceo")
 
     # Delegate based on intent
     data = {}
@@ -142,7 +142,7 @@ Write 1 sentence telling the owner the design is ready and asking them to approv
             try:
                 response = await call_local(summary_prompt, system=identity)
             except Exception:
-                response = await call_claude(summary_prompt, system=identity)
+                response = await call_claude(summary_prompt, system=identity, room="ceo")
 
     elif intent == "pipeline":
         from agents.researcher_room_mvp import run_researcher
@@ -160,7 +160,7 @@ Write 2 sentences: summarise the niche the Researcher found, then tell the owner
         try:
             response = await call_local(summary_prompt, system=identity)
         except Exception:
-            response = await call_claude(summary_prompt, system=identity)
+            response = await call_claude(summary_prompt, system=identity, room="ceo")
 
     elif intent == "publish":
         design = input.get("design", {})
@@ -176,14 +176,14 @@ Write 1 sentence confirming the Factory agent got the product live and share the
             try:
                 response = await call_local(summary_prompt, system=identity)
             except Exception:
-                response = await call_claude(summary_prompt, system=identity)
+                response = await call_claude(summary_prompt, system=identity, room="ceo")
 
     else:
         # General chat
         try:
             response = await call_local(message, system=identity)
         except Exception:
-            response = await call_claude(message, system=identity)
+            response = await call_claude(message, system=identity, room="ceo")
 
     return {
         "intent": intent,

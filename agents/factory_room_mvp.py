@@ -88,7 +88,7 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
         description = await call_local(desc_prompt, system=description_system)
     except Exception:
         model_used = "claude"
-        description = await call_claude(desc_prompt, system=description_system)
+        description = await call_claude(desc_prompt, system=description_system, room="factory")
 
     title = f"{niche} — {product_type}"
 

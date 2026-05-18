@@ -184,7 +184,7 @@ Generate a concise analytics report with:
         text = await call_local(prompt, system=analysis_system)
         return text, "ollama"
     except Exception:
-        text = await call_claude(prompt, system=analysis_system)
+        text = await call_claude(prompt, system=analysis_system, room="analytics")
         return text, "claude"
 
 

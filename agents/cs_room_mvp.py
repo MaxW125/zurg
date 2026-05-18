@@ -162,7 +162,7 @@ Format your response EXACTLY like this (one block per order, nothing else):
         raw = await call_local(prompt, system=system)
         model_used = "ollama"
     except Exception:
-        raw = await call_claude(prompt, system=system)
+        raw = await call_claude(prompt, system=system, room="cs")
         model_used = "claude"
 
     # Parse responses back into the lists

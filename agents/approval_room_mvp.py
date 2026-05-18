@@ -110,7 +110,7 @@ async def analyze_design(design: dict) -> dict:
         analysis = await call_local(prompt, system=analysis_system)
     except Exception:
         model_used = "claude"
-        analysis = await call_claude(prompt, system=analysis_system)
+        analysis = await call_claude(prompt, system=analysis_system, room="approval")
 
     return {
         "analysis": analysis,
@@ -146,7 +146,7 @@ async def auto_decide(design: dict) -> dict:
         raw = await call_local(prompt, system=auto_decide_system)
     except Exception:
         model_used = "claude"
-        raw = await call_claude(prompt, system=auto_decide_system)
+        raw = await call_claude(prompt, system=auto_decide_system, room="approval")
 
     # Parse structured output
     approved = True  # default to approve if parsing fails

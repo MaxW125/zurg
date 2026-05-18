@@ -1,0 +1,161 @@
+import os
+import json
+from datetime import datetime, date
+from agents.brain import load_system_prompt
+
+BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
+COSTS_LEDGER = os.path.join(BRAIN_PATH, "rooms", "treasury", "costs.jsonl")
+CONFIG_PATH  = os.path.join(BRAIN_PATH, "rooms", "treasury", "treasury_config.json")
+
+# Claude Sonnet 4.6 pricing (USD per token)
+COST_PER_INPUT_TOKEN  = 3.00  / 1_000_000
+COST_PER_OUTPUT_TOKEN = 15.00 / 1_000_000
+
+DEFAULT_DAILY_CAP = 1.00
+
+
+def get_config() -> dict:
+    try:
+        with open(CONFIG_PATH) as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+    return {"daily_cap_usd": float(cfg.get("daily_cap_usd", DEFAULT_DAILY_CAP))}
+
+
+def set_config(daily_cap_usd: float) -> dict:
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    cfg = {"daily_cap_usd": round(daily_cap_usd, 4)}
+    with open(CONFIG_PATH, "w") as f:
+        json.dump(cfg, f, indent=2)
+    return cfg
+
+
+def append_cost_entry(room: str, model: str, tokens_in: int, tokens_out: int) -> float:
+    """Write one cost line to the ledger. Returns cost_usd."""
+    cost = round(tokens_in * COST_PER_INPUT_TOKEN + tokens_out * COST_PER_OUTPUT_TOKEN, 6)
+    entry = {
+        "ts":        datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+        "room":      room,
+        "model":     model,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "cost_usd":  cost,
+    }
+    os.makedirs(os.path.dirname(COSTS_LEDGER), exist_ok=True)
+    with open(COSTS_LEDGER, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+    return cost
+
+
+def get_today_spend() -> float:
+    """Sum cost_usd for all entries where ts starts with today's date."""
+    today = date.today().isoformat()
+    total = 0.0
+    try:
+        with open(COSTS_LEDGER) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                    if entry.get("ts", "").startswith(today):
+                        total += float(entry.get("cost_usd", 0))
+                except Exception:
+                    continue
+    except FileNotFoundError:
+        pass
+    return round(total, 6)
+
+
+def check_daily_cap():
+    """Raise RuntimeError if today's spend has hit the configured daily cap."""
+    cfg = get_config()
+    cap = cfg["daily_cap_usd"]
+    if cap <= 0:
+        return  # 0 = disabled
+    spent = get_today_spend()
+    if spent >= cap:
+        raise RuntimeError(f"daily_cap_exceeded: spent ${spent:.4f} of ${cap:.2f} cap today")
+
+
+def _read_all_entries() -> list[dict]:
+    entries = []
+    try:
+        with open(COSTS_LEDGER) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except Exception:
+                    continue
+    except FileNotFoundError:
+        pass
+    return entries
+
+
+def get_report() -> dict:
+    entries = _read_all_entries()
+    today = date.today().isoformat()
+
+    total_spend = 0.0
+    today_spend = 0.0
+    by_room: dict[str, dict] = {}
+
+    for e in entries:
+        cost = float(e.get("cost_usd", 0))
+        room = e.get("room", "unknown")
+        total_spend += cost
+        if e.get("ts", "").startswith(today):
+            today_spend += cost
+
+        if room not in by_room:
+            by_room[room] = {"room": room, "runs": 0, "total_cost": 0.0}
+        by_room[room]["runs"] += 1
+        by_room[room]["total_cost"] += cost
+
+    # Round by-room totals
+    room_rows = sorted(by_room.values(), key=lambda r: -r["total_cost"])
+    for r in room_rows:
+        r["total_cost"] = round(r["total_cost"], 4)
+
+    total_runs = len(entries)
+    avg_cost = round(total_spend / total_runs, 6) if total_runs else 0.0
+
+    # ROI — read revenue from latest analytics report
+    revenue = _get_analytics_revenue()
+    roi = None
+    if revenue is not None and total_spend > 0:
+        roi = round(revenue / total_spend, 2)
+
+    cfg = get_config()
+
+    return {
+        "total_spend":    round(total_spend, 4),
+        "today_spend":    round(today_spend, 4),
+        "daily_cap_usd":  cfg["daily_cap_usd"],
+        "cap_hit_today":  today_spend >= cfg["daily_cap_usd"] and cfg["daily_cap_usd"] > 0,
+        "total_runs":     total_runs,
+        "avg_cost":       avg_cost,
+        "revenue":        revenue,
+        "roi":            roi,
+        "by_room":        room_rows,
+        "entry_count":    len(entries),
+        "report_date":    today,
+    }
+
+
+def _get_analytics_revenue() -> float | None:
+    path = os.path.join(BRAIN_PATH, "rooms", "analytics", "reports", "latest_report.json")
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        val = data.get("revenue_total")
+        if val is not None:
+            return float(val)
+    except Exception:
+        pass
+    return None

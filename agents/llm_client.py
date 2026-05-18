@@ -7,6 +7,24 @@ OLLAMA_MODEL = "llama3.2"
 CLAUDE_MODEL = "claude-sonnet-4-6"
 
 
+def _log_cost(room: str, tokens_in: int, tokens_out: int) -> None:
+    try:
+        from agents.treasury_mvp import append_cost_entry
+        append_cost_entry(room, CLAUDE_MODEL, tokens_in, tokens_out)
+    except Exception:
+        pass  # never let cost logging crash an agent
+
+
+def _check_cap() -> None:
+    try:
+        from agents.treasury_mvp import check_daily_cap
+        check_daily_cap()
+    except RuntimeError:
+        raise  # let the cap breach bubble up so callers fall back to Ollama
+    except Exception:
+        pass  # import errors or file errors shouldn't block Claude calls
+
+
 async def call_local(prompt: str, system: str = "") -> str:
     """Call Ollama (llama3.2). Raises on failure so callers can fall back to Claude."""
     messages = []
@@ -23,8 +41,9 @@ async def call_local(prompt: str, system: str = "") -> str:
         return r.json()["message"]["content"].strip()
 
 
-async def call_claude(prompt: str, system: str = "") -> str:
+async def call_claude(prompt: str, system: str = "", room: str = "unknown") -> str:
     """Call Claude Sonnet. Used as fallback or in production."""
+    _check_cap()
     client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     kwargs = {
         "model": CLAUDE_MODEL,
@@ -35,6 +54,7 @@ async def call_claude(prompt: str, system: str = "") -> str:
         kwargs["system"] = system
 
     message = await client.messages.create(**kwargs)
+    _log_cost(room, message.usage.input_tokens, message.usage.output_tokens)
     return message.content[0].text.strip()
 
 

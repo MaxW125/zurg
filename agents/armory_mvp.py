@@ -154,7 +154,7 @@ Write the complete SKILL.md content. Output only the file content — nothing el
         content = await call_local(prompt, system=system)
         model_used = "ollama"
     except Exception:
-        content = await call_claude(prompt, system=system)
+        content = await call_claude(prompt, system=system, room="armory")
         model_used = "claude"
 
     # Clean up: strip any preamble before the frontmatter

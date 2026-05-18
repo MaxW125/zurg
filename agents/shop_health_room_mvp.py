@@ -168,7 +168,7 @@ Format EXACTLY as:
         raw = await call_local(prompt, system=system)
         model_used = "ollama"
     except Exception:
-        raw = await call_claude(prompt, system=system)
+        raw = await call_claude(prompt, system=system, room="shophealth")
         model_used = "claude"
 
     import re

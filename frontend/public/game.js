@@ -14,6 +14,7 @@ const state = {
   radarBayReport:   null,  // from Radar Bay
   armorySkills:     null,  // from Armory — saved skills list
   armoryPreview:    null,  // from Armory — pending skill preview before save
+  treasuryReport:   null,  // from Treasury — cost/ROI data
   autoMediaBay:    localStorage.getItem('autoMediaBay') === 'true',
   chatHistory:     [],
   loading:         false,
@@ -49,6 +50,7 @@ function openPanel(room) {
     mediabay:   '📱 MEDIA BAY',
     radarbay:   '📡 RADAR BAY',
     armory:     '⚔️ ARMORY',
+    treasury:   '💎 TREASURY',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -64,7 +66,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay, radarbay: renderRadarBay, armory: renderArmory };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay, radarbay: renderRadarBay, armory: renderArmory, treasury: renderTreasury };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -1940,6 +1942,163 @@ async function refreshArmorySkills() {
   _renderArmoryBody(document.getElementById('panel-body'));
 }
 
+// ── Treasury ───────────────────────────────────────────────────
+async function renderTreasury(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING TREASURY...</div></div>`;
+  try {
+    const res = await fetch(`${API}/api/treasury/report`);
+    const data = await res.json();
+    state.treasuryReport = data;
+  } catch (_) {}
+  _renderTreasuryBody(body);
+}
+
+function _renderTreasuryBody(body) {
+  const r = state.treasuryReport;
+  if (!r) {
+    body.innerHTML = `<div class="room-panel"><div class="empty-state">FAILED TO LOAD TREASURY DATA</div></div>`;
+    return;
+  }
+
+  const cap         = r.daily_cap_usd || 0;
+  const todaySpend  = r.today_spend || 0;
+  const capPct      = cap > 0 ? Math.min(100, (todaySpend / cap) * 100) : 0;
+  const capColor    = capPct >= 100 ? 'var(--red)' : capPct >= 75 ? 'var(--orange, #e67e22)' : 'var(--green)';
+  const roiStr      = r.roi != null ? `${r.roi.toFixed(2)}×` : 'N/A';
+  const revenueStr  = r.revenue != null ? `$${r.revenue.toFixed(2)}` : 'N/A';
+
+  // Cap progress bar
+  const capBarHtml = cap > 0 ? `
+    <div style="margin-top:6px">
+      <div style="display:flex;justify-content:space-between;font-size:8px;color:var(--muted);margin-bottom:3px">
+        <span>$${todaySpend.toFixed(4)} spent today</span>
+        <span>$${cap.toFixed(2)} cap</span>
+      </div>
+      <div style="background:var(--bg-alt,#0d0d1a);border-radius:3px;height:8px;overflow:hidden">
+        <div style="width:${capPct.toFixed(1)}%;height:100%;background:${capColor};transition:width 0.3s"></div>
+      </div>
+      ${r.cap_hit_today ? `<div style="color:var(--red);font-size:8px;margin-top:4px">⚠ CAP HIT TODAY — CLAUDE CALLS PAUSED</div>` : ''}
+    </div>` : `<div style="font-size:8px;color:var(--muted);margin-top:4px">No daily cap set</div>`;
+
+  // By-room table
+  let roomRowsHtml = '';
+  if (r.by_room && r.by_room.length > 0) {
+    r.by_room.forEach(row => {
+      roomRowsHtml += `
+        <tr>
+          <td style="padding:4px 8px;color:var(--fg)">${escHtml(row.room)}</td>
+          <td style="padding:4px 8px;color:var(--muted);text-align:center">${row.runs}</td>
+          <td style="padding:4px 8px;color:var(--yellow,#f1c40f);text-align:right">$${row.total_cost.toFixed(4)}</td>
+        </tr>`;
+    });
+  } else {
+    roomRowsHtml = `<tr><td colspan="3" style="padding:8px;color:var(--muted);text-align:center">No Claude calls logged yet</td></tr>`;
+  }
+
+  // Cap config form
+  const currentCap = cap > 0 ? cap.toFixed(2) : '1.00';
+
+  body.innerHTML = `
+    <div class="room-panel">
+
+      <div class="panel-section">
+        <div class="section-title">SPEND OVERVIEW</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+          <div class="stat-card">
+            <div class="stat-value">$${(r.total_spend || 0).toFixed(4)}</div>
+            <div class="stat-label">ALL-TIME SPEND</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${roiStr}</div>
+            <div class="stat-label">ROI (REV ÷ SPEND)</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${revenueStr}</div>
+            <div class="stat-label">SHOPIFY REVENUE</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">$${(r.avg_cost || 0).toFixed(4)}</div>
+            <div class="stat-label">AVG COST / RUN</div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:9px;color:var(--muted)">TODAY'S SPEND</span>
+            <span style="font-size:10px;color:${capColor}">$${todaySpend.toFixed(4)}</span>
+          </div>
+          ${capBarHtml}
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="section-title" style="margin-bottom:0">SPEND BY ROOM (${r.total_runs || 0} TOTAL RUNS)</div>
+          <button class="btn" style="font-size:8px;padding:4px 8px" onclick="refreshTreasury()">↺ REFRESH</button>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:9px">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border,#2a1a4a)">
+              <th style="padding:4px 8px;color:var(--muted);text-align:left;font-weight:normal">ROOM</th>
+              <th style="padding:4px 8px;color:var(--muted);text-align:center;font-weight:normal">RUNS</th>
+              <th style="padding:4px 8px;color:var(--muted);text-align:right;font-weight:normal">COST</th>
+            </tr>
+          </thead>
+          <tbody>${roomRowsHtml}</tbody>
+        </table>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">DAILY CAP</div>
+        <div style="font-size:8px;color:var(--muted);margin-bottom:8px">
+          Set to $0 to disable. When hit, Claude calls pause — agents fall back to Ollama.
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="treasury-cap-input" type="number" step="0.10" min="0" value="${currentCap}"
+            style="background:var(--bg-alt,#0d0d1a);border:1px solid var(--border,#2a1a4a);color:var(--fg);padding:6px 8px;font-family:inherit;font-size:9px;border-radius:3px;width:80px">
+          <button class="btn btn-green" onclick="saveTreasuryCap()" style="font-size:8px;padding:6px 10px">SAVE CAP</button>
+        </div>
+        <div id="treasury-cap-status" style="margin-top:6px"></div>
+      </div>
+
+    </div>`;
+}
+
+async function refreshTreasury() {
+  const body = document.getElementById('panel-body');
+  state.treasuryReport = null;
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> REFRESHING...</div></div>`;
+  try {
+    const res = await fetch(`${API}/api/treasury/report`);
+    const data = await res.json();
+    state.treasuryReport = data;
+  } catch (_) {}
+  _renderTreasuryBody(body);
+}
+
+async function saveTreasuryCap() {
+  const input    = document.getElementById('treasury-cap-input');
+  const statusEl = document.getElementById('treasury-cap-status');
+  const cap      = parseFloat(input?.value ?? '1.00');
+  if (isNaN(cap) || cap < 0) {
+    if (statusEl) statusEl.innerHTML = `<div style="color:var(--red);font-size:8px">Invalid value</div>`;
+    return;
+  }
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> SAVING...</div>`;
+  try {
+    const res  = await fetch(`${API}/api/treasury/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ daily_cap_usd: cap }),
+    });
+    const data = await res.json();
+    if (statusEl) statusEl.innerHTML = `<div style="color:var(--green);font-size:8px">✔ CAP SAVED: $${parseFloat(data.daily_cap_usd).toFixed(2)}</div>`;
+    if (state.treasuryReport) state.treasuryReport.daily_cap_usd = data.daily_cap_usd;
+    setTimeout(() => { if (statusEl) statusEl.innerHTML = ''; }, 3000);
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<div style="color:var(--red);font-size:8px">${escHtml(e.message)}</div>`;
+  }
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -2077,7 +2236,7 @@ function escHtml(str) {
     { cx: 512,  cy: 3584, gx: 0, gy: 3, built: true  },  // Armory
     { cx: 1536, cy: 3584, gx: 1, gy: 3, built: true  },  // Radar Bay
     { cx: 2560, cy: 3584, gx: 2, gy: 3, built: false },  // Memory Room
-    { cx: 3584, cy: 3584, gx: 3, gy: 3, built: false },  // Treasury
+    { cx: 3584, cy: 3584, gx: 3, gy: 3, built: true  },  // Treasury
   ];
 
   function cardinalAngle(fx, fy, tx, ty) {
