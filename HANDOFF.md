@@ -4,6 +4,41 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-18 — Planning + TODO Cleanup (no code)
+
+### What We Did
+- Built Memory Room (16th and final planned room)
+- Cleaned up TODO.md: removed approval engine phase items, expanded room art task to all 16 rooms + agent sprites, added Account Migration section (dedicated Zurg email + permanent Shopify token), flagged 6 items missing from Final Vision for Max to review
+- Compared current state to FINAL_VISION.md — all 16 rooms built, main gaps are cron schedules, WhatsApp SIM, image/fulfillment fallbacks, reviews integration, LLM split
+
+### Current State
+- **All 16 rooms fully built and working**
+- Max is doing account migration manually (new dedicated email, moving Shopify/Anthropic/Google/Printify, setting up permanent custom app Shopify token)
+- Anthropic API key is currently 401 — Treasury logs zeros, all agents fall back to Ollama. Will be fixed as part of account migration.
+- OpenClaw cron jobs not yet set up — all rooms still require manual triggers
+
+### What's Next
+**OpenClaw cron schedules** — this is the biggest autonomy unlock remaining. Wire the following jobs:
+- War Room: daily 7am
+- CEO: daily 8am (reads War Room output, issues instructions)
+- Analytics: Sunday 11pm
+- Pricing: Monday 6am
+- Shop Health: Wednesday 6am
+- Radar Bay: Tuesday 6am
+
+Each cron job needs to POST to the relevant API endpoint (e.g. `POST http://localhost:9000/api/war-room/run`) and optionally trigger a WhatsApp notification via `notify.py` when done.
+
+OpenClaw cron config lives at `~/.openclaw/openclaw.json`. Check OpenClaw docs or existing config for the cron job schema before writing anything.
+
+### Gotchas for Next Session
+- Server runs on port 9000 — OpenClaw gateway runs on port 8000, don't confuse them
+- `notify.py` requires the full PATH env var passed to subprocess (launchd strips PATH) — already handled in the existing notify.py
+- Never pass `--account zurg` to openclaw broadcast — breaks delivery silently
+- After account migration: update `ANTHROPIC_API_KEY`, `SHOPIFY_ACCESS_TOKEN`, `GOOGLE_API_KEY`, `PRINTIFY_API_TOKEN` in `.env`, then `~/zurg/restart-server.sh`
+- Permanent Shopify token comes from: Shopify Admin → Settings → Apps → Develop apps → Create app → install → copy Admin API token
+
+---
+
 ## Session: 2026-05-18 — Memory Room
 
 ### What We Built
