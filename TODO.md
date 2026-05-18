@@ -51,7 +51,7 @@
 - [x] Monitoring Room — system health alerts, spend warnings, API failure detection (`gx=2, gy=2`, col 3 row 3)
 - [x] War Room — daily 7am synthesis ritual, consensus action plan across all rooms
 - [x] Radar Bay — proposes system improvements, monitors agent performance
-- [ ] Armory — converts proposals into SKILL.md files in OpenClaw workspace
+- [x] Armory — converts proposals into SKILL.md files in OpenClaw workspace (`gx=0, gy=3`, col 1 row 4)
 - [ ] Memory Room — brain compression, ChromaDB re-indexing, cold storage
 - [ ] Treasury — cost tracking per agent, ROI dashboard, spend guardrails
 
