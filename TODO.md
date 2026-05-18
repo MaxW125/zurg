@@ -30,8 +30,7 @@
 ## Up Next
 
 ### Quick Wins
-- [ ] Factory room background image — pixel art PNG to replace 🏭 emoji placeholder
-- [ ] Run 20+ design cycles to build verdict history for Approval Agent learning
+- [ ] Room background images + agent sprites — pixel art PNG for every room; each room that has an agent also gets a sprite character on the map
 
 ### Agent Rooms (build one at a time)
 > Finish each room as completely as possible before moving to the next. Room background images and agent sprites can be skipped.
@@ -52,16 +51,15 @@
 - [x] War Room — daily 7am synthesis ritual, consensus action plan across all rooms
 - [x] Radar Bay — proposes system improvements, monitors agent performance
 - [x] Armory — converts proposals into SKILL.md files in OpenClaw workspace (`gx=0, gy=3`, col 1 row 4)
-- [ ] Memory Room — brain compression, ChromaDB re-indexing, cold storage
+- [x] Memory Room — brain compression, ChromaDB re-indexing, cold storage
 - [x] Treasury — cost tracking per agent, ROI dashboard, spend guardrails
 
 ### Automation
 - [ ] OpenClaw cron schedules — War Room 7am, CEO 8am, Pricing Monday 6am, Shop Health Wednesday 6am, Radar Tuesday 6am
 - [ ] Event-driven sprite movement — characters react to pipeline events via SSE
 
-### Approval Engine
-- [ ] Phase 2 — agent predicts verdict, owner spot-checks (unlock after ~100 verdicts, >85% accuracy)
-- [ ] Phase 3 — fully autonomous approvals with 7-day audit window (unlock after ~200 verdicts)
+### Account Migration
+- [ ] Create a new dedicated email for Zurg (separate from personal) — to be used for Shopify, Anthropic, Google (Imagen), Printify, Publer, and all other services
 
 ### Infrastructure
 - [ ] Wire Everbee real market data into Researcher — code complete, awaiting Everbee Open API approval
