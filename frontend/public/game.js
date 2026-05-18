@@ -11,6 +11,7 @@ const state = {
   warRoomReport:    null,  // from War Room
   monitoringReport: null,  // from Monitoring Room
   mediaBayReport:   null,  // from Media Bay
+  radarBayReport:   null,  // from Radar Bay
   autoMediaBay:    localStorage.getItem('autoMediaBay') === 'true',
   chatHistory:     [],
   loading:         false,
@@ -44,6 +45,7 @@ function openPanel(room) {
     warroom:    '⚔️ WAR ROOM',
     monitoring: '🖥️ MONITORING ROOM',
     mediabay:   '📱 MEDIA BAY',
+    radarbay:   '📡 RADAR BAY',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -59,7 +61,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay, radarbay: renderRadarBay };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -1668,6 +1670,101 @@ function copyMediaContent(elId) {
   navigator.clipboard.writeText(el.textContent).then(() => toast('COPIED TO CLIPBOARD'));
 }
 
+// ── Radar Bay Panel ────────────────────────────────────────────
+async function renderRadarBay(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING RADAR BAY...</div></div>`;
+  if (!state.radarBayReport) {
+    try {
+      const res = await fetch(`${API}/api/radar-bay/status`);
+      const data = await res.json();
+      if (data.report) state.radarBayReport = data.report;
+    } catch (_) {}
+  }
+  _renderRadarBayBody(body);
+}
+
+function _renderRadarBayBody(body) {
+  const r = state.radarBayReport;
+  const PRIORITY_LABEL = ['', 'CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'LOW'];
+  const PRIORITY_COLOR = ['', 'var(--red)', 'var(--orange, #e67e22)', 'var(--yellow, #f1c40f)', 'var(--green)', 'var(--green)'];
+
+  let proposalsHtml = '';
+  if (r && r.proposals && r.proposals.length > 0) {
+    r.proposals.forEach(p => {
+      const pri = Math.min(Math.max(p.priority, 1), 5);
+      const color = PRIORITY_COLOR[pri];
+      const label = PRIORITY_LABEL[pri];
+      proposalsHtml += `
+        <div class="stat-card" style="margin-bottom:10px;border-left:3px solid ${color}">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="color:${color};font-size:9px;font-weight:bold">P${pri} ${label}</span>
+            <span style="color:var(--muted);font-size:8px">#${p.id} · ${escHtml(p.room)}</span>
+          </div>
+          <div style="font-size:10px;color:var(--fg);margin-bottom:4px">${escHtml(p.title)}</div>
+          <div style="font-size:9px;color:var(--muted);margin-bottom:2px">${escHtml(p.description)}</div>
+          <div style="font-size:8px;color:var(--muted);font-style:italic">${escHtml(p.rationale)}</div>
+        </div>`;
+    });
+  }
+
+  body.innerHTML = `
+    <div class="room-panel">
+      <div class="panel-section">
+        <button class="btn btn-blue" id="radarbay-btn" onclick="runRadarBay()">▶ SCAN SYSTEM</button>
+        <div id="radarbay-run-status"></div>
+      </div>
+      ${r ? `
+      <div class="panel-section">
+        <div class="stat-row">
+          <span class="stat-label">LAST SCAN</span>
+          <span class="stat-value">${escHtml(r.run_date || '—')}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">ROOMS SCANNED</span>
+          <span class="stat-value">${(r.rooms_scanned || []).length}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">PROPOSALS</span>
+          <span class="stat-value">${(r.proposals || []).length}</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">MODEL</span>
+          <span class="stat-value">${escHtml(r.model_used || '—')}</span>
+        </div>
+      </div>
+      <div class="panel-section">
+        <div class="section-title">PROPOSALS</div>
+        ${proposalsHtml || '<div class="empty-state">NO PROPOSALS GENERATED</div>'}
+      </div>
+      ` : '<div class="empty-state">NO SCAN RUN YET — HIT SCAN SYSTEM</div>'}
+    </div>`;
+}
+
+async function runRadarBay() {
+  const btn      = document.getElementById('radarbay-btn');
+  const statusEl = document.getElementById('radarbay-run-status');
+  if (btn) btn.disabled = true;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> SCANNING ALL ROOMS...</div>`;
+
+  try {
+    const res  = await fetch(`${API}/api/radar-bay/run`, { method: 'POST' });
+    const data = await res.json();
+    if (data.error) {
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.radarBayReport = data;
+      const count = (data.proposals || []).length;
+      toast(`📡 RADAR BAY — ${count} PROPOSAL${count !== 1 ? 'S' : ''} GENERATED`);
+      _renderRadarBayBody(document.getElementById('panel-body'));
+      return;
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+
+  if (btn) btn.disabled = false;
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -1803,7 +1900,7 @@ function escHtml(str) {
     { cx: 3584, cy: 2560, gx: 3, gy: 2, built: true  },  // Media Bay
     // Row 3
     { cx: 512,  cy: 3584, gx: 0, gy: 3, built: false },  // Armory
-    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: false },  // Radar Bay
+    { cx: 1536, cy: 3584, gx: 1, gy: 3, built: true  },  // Radar Bay
     { cx: 2560, cy: 3584, gx: 2, gy: 3, built: false },  // Memory Room
     { cx: 3584, cy: 3584, gx: 3, gy: 3, built: false },  // Treasury
   ];
