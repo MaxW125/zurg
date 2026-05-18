@@ -41,7 +41,7 @@ def _send_sync(message: str) -> bool:
             timeout=15,
             env=env,
         )
-        if result.returncode == 0 and "0 failed" not in result.stdout:
+        if result.returncode == 0:
             return True
         print(f"[notify] WhatsApp send failed: {result.stdout.strip()[:200]}")
         return False
