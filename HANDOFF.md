@@ -25,8 +25,12 @@ _Update this before ending a session or starting a new room. One section per ses
 - `GET /api/monitoring/status` returns cached report correctly
 - Both endpoints confirmed in OpenAPI
 
+### Post-Session: Shopify Token Refresh (2026-05-18)
+- Shopify token expired overnight (as expected — 24h TTL)
+- Ran `shopify store auth`, new token `shpat_REDACTED` dropped into `.env`, server restarted — Shopify returning 200 again
+- Anthropic API key still 401 — not needed in dev (Ollama handles all LLM calls), leaving as-is
+
 ### What's Next
-- **Anthropic API key** — the check revealed it's currently returning 401. May need a fresh key from the Anthropic console.
 - **Media Bay** — TikTok/Instagram content creation, Publer scheduling (`gx=1, gy=3`, col 2 row 4)
 - Or: **OpenClaw cron schedule** — War Room 7am daily, Monitoring as a watchdog
 
