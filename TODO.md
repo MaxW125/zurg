@@ -72,7 +72,7 @@
 
 ### Flagged as missing from Final Vision — Max to review
 - [x] Real SIM for WhatsApp — verified with temp eSIM, WhatsApp is active and working via OpenClaw
-- [ ] Telegram + iMessage channels — vision lists all three messaging targets; only WhatsApp is wired so far
+- [x] Telegram + iMessage channels — WhatsApp via OpenClaw is sufficient, additional channels not needed
 - [ ] Ideogram + Flux as image generation fallbacks — vision says "Imagen primary, Ideogram fallback, Flux backup"; currently Imagen only with no fallback if it fails
 - [ ] Gelato as fulfillment fallback — vision says "Printify (primary), Gelato (fallback)"; only Printify is wired
 - [ ] Reviews integration — Judge.me or Yotpo listed in vision tech stack; nothing built or planned
