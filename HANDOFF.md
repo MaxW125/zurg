@@ -70,7 +70,7 @@ _Update this before ending a session or starting a new room. One section per ses
 - Anthropic API key still 401 — not needed in dev (Ollama handles all LLM calls), leaving as-is
 
 ### What's Next
-- **Media Bay** — TikTok/Instagram content creation, Publer scheduling (`gx=1, gy=3`, col 2 row 4)
+- **Media Bay** — TikTok/Instagram content creation, Publer scheduling (`gx=3, gy=2, col 4 row 3)
 - Or: **OpenClaw cron schedule** — War Room 7am daily, Monitoring as a watchdog
 
 ### Gotchas for Next Session
@@ -106,7 +106,7 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ### What's Next
 - **Monitoring Room** — system health alerts, spend warnings, API failure detection (`gx=2, gy=2`, col 3 row 3)
-- Or: **Media Bay** — TikTok/Instagram content creation, Publer scheduling (`gx=1, gy=3`, col 2 row 4)
+- Or: **Media Bay** — TikTok/Instagram content creation, Publer scheduling (`gx=3, gy=2, col 4 row 3)
 - Or: **OpenClaw cron schedule** — wire War Room to run daily at 7am
 
 ### Gotchas for Next Session
