@@ -59,7 +59,7 @@
 - [ ] Event-driven sprite movement — characters react to pipeline events via SSE
 
 ### Account Migration
-- [ ] Create a new dedicated email for Zurg (separate from personal) — to be used for Shopify, Anthropic, Google (Imagen), Printify, Publer, and all other services
+- [x] Create a new dedicated email for Zurg (separate from personal) — to be used for Shopify, Anthropic, Google (Imagen), Printify, Publer, and all other services
 - [ ] Replace expiring Shopify token with a permanent one — create a Custom App in Shopify Admin (Settings → Apps → Develop apps), install it, copy the permanent `shpat_` token into `.env`. Do this on the new account when migrating, not before.
 
 ### Infrastructure
