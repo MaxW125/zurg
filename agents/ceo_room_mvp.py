@@ -22,11 +22,12 @@ def _save_last_design(design: dict):
 INTENT_SYSTEM = """You are an intent classifier. Read the message and output ONLY a JSON object: {"intent": "<value>"}
 
 Intent rules — pick the FIRST one that matches:
-- "research"  → message mentions: niche, product idea, find, discover, research, market, opportunity, what should I sell, what sells well
-- "design"    → message mentions: design, image, generate image, create image, draw, illustrate, make a design
-- "publish"   → message mentions: publish, shopify, list, post, upload, go live, put it on the store
-- "pipeline"  → message mentions: full pipeline, start from scratch, do everything, run it all
-- "chat"      → anything else (greetings, questions, status, yes/no, unclear)
+- "research"       → message mentions: niche, product idea, find, discover, research, market, opportunity, what should I sell, what sells well
+- "design"         → message mentions: design, image, generate image, create image, draw, illustrate, make a design
+- "publish"        → message mentions: publish, shopify, list, post, upload, go live, put it on the store
+- "pipeline"       → message mentions: full pipeline, start from scratch, do everything, run it all
+- "set_reporting"  → message mentions: weekly report, daily report, switch to weekly, go weekly, switch to daily, daily briefing, weekly briefing, report frequency, weekly updates, daily updates
+- "chat"           → anything else (greetings, questions, status, yes/no, unclear)
 
 Examples:
 "find me a niche about dogs" → {"intent": "research"}
@@ -36,6 +37,8 @@ Examples:
 "make an image for the brief" → {"intent": "design"}
 "publish this to shopify" → {"intent": "publish"}
 "run the full pipeline" → {"intent": "pipeline"}
+"switch to weekly reports" → {"intent": "set_reporting"}
+"go back to daily" → {"intent": "set_reporting"}
 "how are you" → {"intent": "chat"}
 "yes" → {"intent": "chat"}
 
@@ -177,6 +180,18 @@ Write 1 sentence confirming the Factory agent got the product live and share the
                 response = await call_local(summary_prompt, system=identity)
             except Exception:
                 response = await call_claude(summary_prompt, system=identity, room="ceo")
+
+    elif intent == "set_reporting":
+        mode = "weekly" if any(w in message.lower() for w in ["weekly", "week"]) else "daily"
+        config_path = os.path.join(BRAIN_PATH, "rooms", "captain", "reporting_config.json")
+        os.makedirs(os.path.dirname(config_path), exist_ok=True)
+        with open(config_path, "w") as f:
+            json.dump({"mode": mode}, f)
+        confirm_prompt = f'You just switched the owner\'s briefing mode to "{mode}" reports. Write 1 sentence confirming this change in your own voice.'
+        try:
+            response = await call_local(confirm_prompt, system=identity)
+        except Exception:
+            response = await call_claude(confirm_prompt, system=identity, room="ceo")
 
     else:
         # General chat
