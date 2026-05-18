@@ -12,6 +12,8 @@ const state = {
   monitoringReport: null,  // from Monitoring Room
   mediaBayReport:   null,  // from Media Bay
   radarBayReport:   null,  // from Radar Bay
+  armorySkills:     null,  // from Armory — saved skills list
+  armoryPreview:    null,  // from Armory — pending skill preview before save
   autoMediaBay:    localStorage.getItem('autoMediaBay') === 'true',
   chatHistory:     [],
   loading:         false,
@@ -46,6 +48,7 @@ function openPanel(room) {
     monitoring: '🖥️ MONITORING ROOM',
     mediabay:   '📱 MEDIA BAY',
     radarbay:   '📡 RADAR BAY',
+    armory:     '⚔️ ARMORY',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -61,7 +64,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay, radarbay: renderRadarBay };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay, radarbay: renderRadarBay, armory: renderArmory };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -1765,6 +1768,178 @@ async function runRadarBay() {
   if (btn) btn.disabled = false;
 }
 
+// ── Armory ─────────────────────────────────────────────────────
+async function renderArmory(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING ARMORY...</div></div>`;
+  if (!state.armorySkills) {
+    try {
+      const res = await fetch(`${API}/api/armory/skills`);
+      const data = await res.json();
+      if (data.skills) state.armorySkills = data.skills;
+    } catch (_) {}
+  }
+  _renderArmoryBody(body);
+}
+
+function _renderArmoryBody(body) {
+  const PRIORITY_COLOR = ['', 'var(--red)', 'var(--orange, #e67e22)', 'var(--yellow, #f1c40f)', 'var(--green)', 'var(--green)'];
+  const radar = state.radarBayReport;
+  const preview = state.armoryPreview;
+  const skills = state.armorySkills || [];
+
+  // Proposal picker from Radar Bay
+  let proposalsHtml = '';
+  if (radar && radar.proposals && radar.proposals.length > 0) {
+    radar.proposals.forEach(p => {
+      const pri = Math.min(Math.max(p.priority, 1), 5);
+      const color = PRIORITY_COLOR[pri];
+      proposalsHtml += `
+        <div class="stat-card" style="margin-bottom:8px;border-left:3px solid ${color}">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div>
+              <div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+                <span style="color:${color};font-size:9px;font-weight:bold">P${pri}</span>
+                <span style="color:var(--muted);font-size:8px">#${p.id} · ${escHtml(p.room)}</span>
+              </div>
+              <div style="font-size:10px;color:var(--fg)">${escHtml(p.title)}</div>
+            </div>
+            <button class="btn btn-blue" style="font-size:8px;padding:4px 8px;white-space:nowrap"
+              id="armory-gen-btn-${p.id}" onclick="generateSkill(${p.id})">⚒ FORGE</button>
+          </div>
+        </div>`;
+    });
+  } else if (!radar) {
+    proposalsHtml = `<div class="empty-state">RUN RADAR BAY FIRST TO SEE PROPOSALS</div>`;
+  } else {
+    proposalsHtml = `<div class="empty-state">NO PROPOSALS IN LATEST RADAR BAY REPORT</div>`;
+  }
+
+  // Preview section
+  let previewHtml = '';
+  if (preview) {
+    previewHtml = `
+      <div class="panel-section">
+        <div class="section-title">SKILL PREVIEW — ${escHtml(preview.proposal_title)} v${preview.version}</div>
+        <pre style="font-size:8px;color:var(--muted);background:var(--bg-alt, #0d0d1a);padding:10px;border-radius:4px;overflow-x:auto;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow-y:auto">${escHtml(preview.content)}</pre>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-green" onclick="saveSkill()">✔ CONFIRM &amp; SAVE</button>
+          <button class="btn" onclick="cancelSkillPreview()">✕ CANCEL</button>
+        </div>
+        <div id="armory-save-status"></div>
+      </div>`;
+  }
+
+  // Saved skills list
+  let skillsHtml = '';
+  if (skills.length > 0) {
+    skills.forEach(s => {
+      skillsHtml += `
+        <div class="stat-card" style="margin-bottom:6px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:10px;color:var(--fg)">${escHtml(s.name)} <span style="color:var(--muted);font-size:8px">v${escHtml(s.version || '?')}</span></div>
+              <div style="font-size:8px;color:var(--muted);margin-top:2px">${escHtml(s.description || '—')}</div>
+            </div>
+            <div style="font-size:8px;color:var(--muted);text-align:right;flex-shrink:0">${escHtml(s.created)}</div>
+          </div>
+        </div>`;
+    });
+  } else {
+    skillsHtml = `<div class="empty-state">NO SKILLS FORGED YET</div>`;
+  }
+
+  body.innerHTML = `
+    <div class="room-panel">
+      <div class="panel-section">
+        <div class="section-title">PROPOSALS FROM RADAR BAY</div>
+        ${proposalsHtml}
+        <div id="armory-gen-status"></div>
+      </div>
+      ${previewHtml}
+      <div class="panel-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="section-title" style="margin-bottom:0">SAVED SKILLS (${skills.length})</div>
+          <button class="btn" style="font-size:8px;padding:4px 8px" onclick="refreshArmorySkills()">↺ REFRESH</button>
+        </div>
+        ${skillsHtml}
+      </div>
+    </div>`;
+}
+
+async function generateSkill(proposalId) {
+  const btn      = document.getElementById(`armory-gen-btn-${proposalId}`);
+  const statusEl = document.getElementById('armory-gen-status');
+  if (btn) { btn.disabled = true; btn.textContent = '...'; }
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> FORGING SKILL...</div>`;
+
+  try {
+    const res  = await fetch(`${API}/api/armory/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proposal_id: proposalId }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+      if (btn) { btn.disabled = false; btn.textContent = '⚒ FORGE'; }
+    } else {
+      state.armoryPreview = data;
+      if (statusEl) statusEl.innerHTML = '';
+      _renderArmoryBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+    if (btn) { btn.disabled = false; btn.textContent = '⚒ FORGE'; }
+  }
+}
+
+async function saveSkill() {
+  const preview  = state.armoryPreview;
+  if (!preview) return;
+  const statusEl = document.getElementById('armory-save-status');
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> SAVING...</div>`;
+
+  try {
+    const res  = await fetch(`${API}/api/armory/save`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: preview.content, slug: preview.slug, version: preview.version }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(data.error)}</div>`;
+    } else {
+      state.armoryPreview = null;
+      state.armorySkills  = null;  // force refresh
+      toast(`⚔️ ARMORY — SKILL SAVED: ${data.filename}`);
+      // Reload skills list
+      try {
+        const r2   = await fetch(`${API}/api/armory/skills`);
+        const d2   = await r2.json();
+        if (d2.skills) state.armorySkills = d2.skills;
+      } catch (_) {}
+      _renderArmoryBody(document.getElementById('panel-body'));
+    }
+  } catch (e) {
+    if (statusEl) statusEl.innerHTML = `<div class="empty-state" style="color:var(--red)">${escHtml(e.message)}</div>`;
+  }
+}
+
+function cancelSkillPreview() {
+  state.armoryPreview = null;
+  _renderArmoryBody(document.getElementById('panel-body'));
+}
+
+async function refreshArmorySkills() {
+  state.armorySkills = null;
+  try {
+    const res = await fetch(`${API}/api/armory/skills`);
+    const data = await res.json();
+    if (data.skills) state.armorySkills = data.skills;
+  } catch (_) {}
+  _renderArmoryBody(document.getElementById('panel-body'));
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -1899,7 +2074,7 @@ function escHtml(str) {
     { cx: 2560, cy: 2560, gx: 2, gy: 2, built: true  },  // Monitoring
     { cx: 3584, cy: 2560, gx: 3, gy: 2, built: true  },  // Media Bay
     // Row 3
-    { cx: 512,  cy: 3584, gx: 0, gy: 3, built: false },  // Armory
+    { cx: 512,  cy: 3584, gx: 0, gy: 3, built: true  },  // Armory
     { cx: 1536, cy: 3584, gx: 1, gy: 3, built: true  },  // Radar Bay
     { cx: 2560, cy: 3584, gx: 2, gy: 3, built: false },  // Memory Room
     { cx: 3584, cy: 3584, gx: 3, gy: 3, built: false },  // Treasury
