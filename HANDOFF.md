@@ -4,17 +4,20 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
-## Session: 2026-05-18 — Planning + TODO Cleanup (no code)
+## Session: 2026-05-18 — Shopify Token Automation
 
 ### What We Did
-- Built Memory Room (16th and final planned room)
-- Cleaned up TODO.md: removed approval engine phase items, expanded room art task to all 16 rooms + agent sprites, added Account Migration section (dedicated Zurg email + permanent Shopify token), flagged 6 items missing from Final Vision for Max to review
-- Compared current state to FINAL_VISION.md — all 16 rooms built, main gaps are cron schedules, WhatsApp SIM, image/fulfillment fallbacks, reviews integration, LLM split
+- Solved the Shopify token problem: `shopify store auth` runs headlessly when a valid session exists — no browser required
+- Verified the refresh script (`~/zurg/refresh-shopify-token.sh`) works end-to-end: refreshes token, updates `.env`, restarts server
+- launchd job (`com.zurg.shopify-refresh`) already installed, fires every 23 hours automatically
+- Confirmed new store (Kraken & Co., your-store.myshopify.com) is live via API — returns correct store name and zurg-account@example.com
+- Documented full runbook in brain: `Obsidian Vaults/Zurg/shopify-token-runbook.md`
+- Old dev store (your-store.myshopify.com) is safe to delete — nothing points to it
 
 ### Current State
 - **All 16 rooms fully built and working**
-- Max is doing account migration manually (new dedicated email, moving Shopify/Anthropic/Google/Printify, setting up permanent custom app Shopify token)
-- Anthropic API key is currently 401 — Treasury logs zeros, all agents fall back to Ollama. Will be fixed as part of account migration.
+- **Shopify fully migrated** to Kraken & Co. on zurg-account@example.com, token auto-refreshes
+- Anthropic API key is currently 401 — Treasury logs zeros, all agents fall back to Ollama. Will be fixed when account migration continues (Google, Printify, Everbee, OpenClaw, Publer still to migrate)
 - OpenClaw cron jobs not yet set up — all rooms still require manual triggers
 
 ### What's Next
@@ -34,8 +37,8 @@ OpenClaw cron config lives at `~/.openclaw/openclaw.json`. Check OpenClaw docs o
 - Server runs on port 9000 — OpenClaw gateway runs on port 8000, don't confuse them
 - `notify.py` requires the full PATH env var passed to subprocess (launchd strips PATH) — already handled in the existing notify.py
 - Never pass `--account zurg` to openclaw broadcast — breaks delivery silently
-- After account migration: update `ANTHROPIC_API_KEY`, `SHOPIFY_ACCESS_TOKEN`, `GOOGLE_API_KEY`, `PRINTIFY_API_TOKEN` in `.env`, then `~/zurg/restart-server.sh`
-- Permanent Shopify token comes from: Shopify Admin → Settings → Apps → Develop apps → Create app → install → copy Admin API token
+- Shopify token is handled — DO NOT touch the refresh script or launchd plist
+- If Shopify token ever needs manual recovery: run `shopify store auth --store your-store.myshopify.com --scopes read_all_orders,...` then `bash ~/zurg/refresh-shopify-token.sh`
 
 ---
 
