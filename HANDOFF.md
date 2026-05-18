@@ -4,6 +4,42 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-18 — Radar Bay
+
+### What We Built
+**Radar Bay** — cross-room diagnostic scanner that proposes numbered system improvements (13th room built).
+
+- **`agents/radar_bay_mvp.py`** — loads `latest_report.json` from all 7 data rooms (analytics, pricing, shop_health, cs, war_room, monitoring, media_bay); counts research briefs and approval verdicts from vault; builds a cross-system briefing with per-room age (hours since last report); sends to LLM (Ollama → Claude fallback); parses response into proposals list. Handles two LLM output shapes: `{"proposals": [...]}` (object) and `[...]` (bare array). Also normalises `affectedRoom`/`affected_room` field aliases to `room`. Saves `latest_report.json` + timestamped `.md` to `rooms/radar_bay/reports/`.
+- **`routers/radar_bay.py`** — `POST /api/radar-bay/run`, `GET /api/radar-bay/status`
+- **`main.py`** — radar_bay router wired in
+- **`game.js`** — `radarBayReport` in state; `radarbay: '📡 RADAR BAY'` in titles; added to renders dict; `renderRadarBay`, `_renderRadarBayBody`, `runRadarBay` functions; ROOMS array `gx:1, gy:3, built:true`; proposals rendered with priority colour-coding (P1=red, P2=orange, P3=yellow, P4/5=green)
+- **`index.html`** — Radar Bay at col 2, row 4 — coming-soon replaced with live `onclick="openPanel('radarbay')"`
+- **Vault** — `rooms/radar_bay/room.md` + `rooms/radar_bay/agents/radar/identity.md` written
+
+### Bugs Hit
+- Ollama returned a bare JSON array `[{...}]` instead of the expected object `{"proposals": [...]}`. Fixed by extending the parser to try object form first, then fall back to array form.
+- Ollama used `affectedRoom` field instead of `room`. Fixed by normalising all three aliases (`room`, `affectedRoom`, `affected_room`) in post-parse cleanup.
+
+### Current State
+- 13 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health, War Room, Monitoring, Media Bay, Radar Bay
+- Tested end-to-end: `POST /api/radar-bay/run` scanned all 7 rooms, generated 6 real proposals (stale reports, Anthropic API 401, CS pipeline gap, pricing optimisation)
+- `GET /api/radar-bay/status` returns cached report correctly
+- Panel renders proposal cards with priority colour-coding; P1–P5 labels shown
+
+### What's Next
+- **Armory** — converts approved Radar Bay proposals into SKILL.md files (`gx=0, gy=3`, col 1 row 4)
+- Or: **Treasury** — cost tracking per agent, ROI dashboard (`gx=3, gy=3`, col 4 row 4)
+- Or: **OpenClaw cron schedule** — Radar Bay Tuesday 6am per the automation plan
+
+### Gotchas for Next Session
+- Radar Bay report schema: `run_date`, `model_used`, `rooms_scanned` (list[str]), `proposals` (list), `report_path`
+- Proposal schema: `id` (int), `title` (str), `room` (str), `priority` (int 1–5), `description` (str), `rationale` (str)
+- LLM sometimes returns `affectedRoom` or bare array — parser handles both, safe to keep as-is
+- Radar Bay is standalone/read-only — does not feed any other room or trigger any action
+- Grid position: `gx=1, gy=3` (col 2, row 4) — previously the slot shown as `gx=1, gy=3` in the ROOMS array
+
+---
+
 ## Session: 2026-05-18 — Media Bay
 
 ### What We Built
