@@ -60,7 +60,7 @@
 
 ### Account Migration
 - [x] Create a new dedicated email for Zurg (separate from personal) — to be used for Shopify, Anthropic, Google (Imagen), Printify, Publer, and all other services
-- [ ] Replace expiring Shopify token with a permanent one — create a Custom App in Shopify Admin (Settings → Apps → Develop apps), install it, copy the permanent `shpat_` token into `.env`. Do this on the new account when migrating, not before.
+- [x] Replace expiring Shopify token with a permanent one — handled via auto-refresh launchd job (com.zurg.shopify-refresh) every 23 hours. Permanent shpat_ token can be set up later via Custom App in Shopify Admin if needed.
 
 ### Infrastructure
 - [ ] Wire Everbee real market data into Researcher — code complete, awaiting Everbee Open API approval
