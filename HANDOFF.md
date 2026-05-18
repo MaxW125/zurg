@@ -4,6 +4,52 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-18 — Memory Room
+
+### What We Built
+**Memory Room** — vault stats, compression, cold storage export, ChromaDB stub re-indexing (16th and final planned room built).
+
+- **`agents/memory_room_mvp.py`** — four pure-filesystem functions (no LLM):
+  - `get_vault_stats()`: walks `rooms/*/`, counts briefs (97), verdicts (29), archived reports, skills (OpenClaw + vault mirror), total .md files (186), per-room file sizes sorted by size, grand total KB.
+  - `compress_vault(keep_n=5)`: for each `rooms/*/reports/`, sorts timestamped files (excludes `latest_report.json`), keeps newest `keep_n`, moves older ones to `rooms/<room>/archive/`. Returns rooms_scanned, files_archived, bytes_freed.
+  - `export_cold_storage()`: zips entire vault (excluding `/customers/`) to `~/zurg/backups/vault_TIMESTAMP.zip`. Returns path, files_zipped, zip_mb.
+  - `run_index()`: recursively scans all `.md` files, skips `/customers/`, records room/filename/path/char_count/preview_100 per file, writes `rooms/memory/index_log.json` with full entries list + summary. Returns summary only (entries list stays on disk).
+- **`routers/memory.py`** — `GET /api/memory/stats`, `POST /api/memory/compress`, `POST /api/memory/export`, `POST /api/memory/index`
+- **`main.py`** — memory router wired in
+- **`game.js`** — `memoryStats` in state; `memory: '🧠 MEMORY ROOM'` in titles; added to renders dict; ROOMS array `gx:2, gy:3, built:true`; `renderMemory`, `_renderMemoryBody`, `refreshMemoryStats`, `runMemoryCompress`, `runMemoryExport`, `runMemoryIndex` functions; panel has 4-stat grid (briefs/verdicts/archived reports/skills), file size table by room, compress form with keep_n input, export button, index button.
+- **`index.html`** — Memory Room at col 3, row 4 — coming-soon replaced with live `onclick="openPanel('memory')"`
+- **Vault** — `rooms/memory/room.md` updated to "built"; `rooms/memory/agents/memory/identity.md` written
+
+### Bugs Hit
+- None. Clean build first pass. All four endpoints verified working end-to-end.
+
+### Current State
+- **All 16 rooms built**: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health, War Room, Monitoring, Media Bay, Radar Bay, Armory, Treasury, Memory
+- `GET /api/memory/stats` returns: 97 briefs, 29 verdicts, 0 archived reports (none to compress yet), 0 skills, 186 total .md files, 168.3 KB total, 15 rooms in size table
+- `POST /api/memory/compress` returns: 9 rooms_scanned, 0 files_archived (nothing old enough to archive — all rooms only have `latest_report.json`)
+- `POST /api/memory/export` created `~/zurg/backups/vault_20260518_192303.zip` — 207 files, 135 KB compressed
+- `POST /api/memory/index` scanned 186 files, 117.9 KB total chars, wrote `rooms/memory/index_log.json`
+- `~/zurg/backups/` directory created as a side-effect — not committed (gitignored by virtue of not being staged)
+
+### What's Next
+All 16 rooms are built. Remaining work is in automation and infrastructure:
+- **OpenClaw cron schedules** — War Room 7am daily, Radar Bay Tuesday 6am, CEO 8am, Pricing Monday 6am, Shop Health Wednesday 6am
+- **Run real Claude calls** — fix Anthropic API key (currently 401), run a full pipeline to see Treasury populate with live cost data
+- **ChromaDB integration** — install `chromadb`, wire `run_index()` to actually upsert documents into a collection (stub is ready)
+- **Approval Engine Phase 2** — need ~100 verdicts with >85% accuracy to unlock
+- **Everbee wire-up** — code complete, awaiting API approval
+
+### Gotchas for Next Session
+- Memory Room is standalone — does not feed any other room, no LLM used
+- `compress_vault` is idempotent: re-running with the same `keep_n` on an already-compressed vault archives nothing
+- `latest_report.json` is explicitly excluded from compression — safe to run at any time
+- `index_log.json` at `rooms/memory/index_log.json` is large (~186 entries with previews) — the API endpoint returns only the summary, not the full entries list; read the file directly in Obsidian to inspect
+- Cold storage zips to `~/zurg/backups/` (not inside BRAIN_PATH) — directory is created on first export, not committed to git
+- `skills_count` counts both `~/.openclaw/skills/*.md` and vault mirror `rooms/armory/skills/*.md` — currently 0 because no skills have been forged yet
+- `reports_count` in stats counts non-`latest_report.json` JSON files in `rooms/*/reports/` — currently 0 because all rooms only have `latest_report.json` (timestamped reports are only created when rooms have been run multiple times)
+
+---
+
 ## Session: 2026-05-18 — Treasury
 
 ### What We Built
