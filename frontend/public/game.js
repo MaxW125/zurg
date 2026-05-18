@@ -15,6 +15,7 @@ const state = {
   armorySkills:     null,  // from Armory — saved skills list
   armoryPreview:    null,  // from Armory — pending skill preview before save
   treasuryReport:   null,  // from Treasury — cost/ROI data
+  memoryStats:      null,  // from Memory Room — vault stats
   autoMediaBay:    localStorage.getItem('autoMediaBay') === 'true',
   chatHistory:     [],
   loading:         false,
@@ -51,6 +52,7 @@ function openPanel(room) {
     radarbay:   '📡 RADAR BAY',
     armory:     '⚔️ ARMORY',
     treasury:   '💎 TREASURY',
+  memory:     '🧠 MEMORY ROOM',
   };
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
@@ -66,7 +68,7 @@ function closePanel() {
 
 function renderPanel(room) {
   const body = document.getElementById('panel-body');
-  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay, radarbay: renderRadarBay, armory: renderArmory, treasury: renderTreasury };
+  const renders = { ceo: renderCeo, research: renderResearch, design: renderDesign, factory: renderFactory, approval: renderApproval, analytics: renderAnalytics, pricing: renderPricing, cs: renderCs, shophealth: renderShopHealth, warroom: renderWarRoom, monitoring: renderMonitoring, mediabay: renderMediaBay, radarbay: renderRadarBay, armory: renderArmory, treasury: renderTreasury, memory: renderMemory };
   (renders[room] || (() => { body.innerHTML = ''; }))(body);
 }
 
@@ -2099,6 +2101,178 @@ async function saveTreasuryCap() {
   }
 }
 
+// ── Memory Room ────────────────────────────────────────────────
+async function renderMemory(body) {
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> LOADING VAULT STATS...</div></div>`;
+  try {
+    const res = await fetch(`${API}/api/memory/stats`);
+    const data = await res.json();
+    state.memoryStats = data;
+  } catch (_) {}
+  _renderMemoryBody(body);
+}
+
+function _renderMemoryBody(body) {
+  const s = state.memoryStats;
+  if (!s) {
+    body.innerHTML = `<div class="room-panel"><div class="empty-state">FAILED TO LOAD VAULT STATS</div></div>`;
+    return;
+  }
+
+  // Artifact counts
+  const statsGrid = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+      <div class="stat-card">
+        <div class="stat-value">${s.briefs_count}</div>
+        <div class="stat-label">RESEARCH BRIEFS</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${s.verdicts_count}</div>
+        <div class="stat-label">APPROVAL VERDICTS</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${s.reports_count}</div>
+        <div class="stat-label">ARCHIVED REPORTS</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${s.skills_count}</div>
+        <div class="stat-label">SKILLS (ARMORY)</div>
+      </div>
+    </div>
+    <div class="stat-card" style="margin-bottom:0">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:9px;color:var(--muted)">${s.total_md_files} .md FILES</span>
+        <span style="font-size:10px;color:var(--green)">${s.total_kb} KB TOTAL</span>
+      </div>
+    </div>`;
+
+  // Per-room size table
+  let roomRowsHtml = '';
+  if (s.room_sizes && s.room_sizes.length > 0) {
+    s.room_sizes.forEach(r => {
+      roomRowsHtml += `
+        <tr>
+          <td style="padding:3px 8px;color:var(--fg)">${escHtml(r.room)}</td>
+          <td style="padding:3px 8px;color:var(--yellow,#f1c40f);text-align:right">${r.kb} KB</td>
+        </tr>`;
+    });
+  }
+
+  body.innerHTML = `
+    <div class="room-panel">
+
+      <div class="panel-section">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <div class="section-title" style="margin-bottom:0">VAULT STATS</div>
+          <button class="btn" style="font-size:8px;padding:4px 8px" onclick="refreshMemoryStats()">↺ REFRESH</button>
+        </div>
+        ${statsGrid}
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">ROOM FILE SIZES</div>
+        <table style="width:100%;border-collapse:collapse;font-size:9px">
+          <tbody>${roomRowsHtml}</tbody>
+        </table>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">COMPRESS VAULT</div>
+        <div style="font-size:8px;color:var(--muted);margin-bottom:8px">
+          Moves old timestamped reports to rooms/&lt;room&gt;/archive/. Keeps latest_report.json always.
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">
+          <span style="font-size:8px;color:var(--muted)">KEEP LATEST</span>
+          <input id="memory-keep-n" type="number" min="1" max="50" value="5"
+            style="background:var(--bg-alt,#0d0d1a);border:1px solid var(--border,#2a1a4a);color:var(--fg);padding:6px 8px;font-family:inherit;font-size:9px;border-radius:3px;width:60px">
+          <button class="btn btn-green" onclick="runMemoryCompress()" style="font-size:8px;padding:6px 10px">COMPRESS</button>
+        </div>
+        <div id="memory-compress-result"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">COLD STORAGE EXPORT</div>
+        <div style="font-size:8px;color:var(--muted);margin-bottom:8px">
+          Zips entire vault to ~/zurg/backups/vault_TIMESTAMP.zip. Excludes /customers.
+        </div>
+        <button class="btn" onclick="runMemoryExport()" style="font-size:8px;padding:6px 10px">EXPORT ZIP</button>
+        <div id="memory-export-result" style="margin-top:6px"></div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">RE-INDEX (CHROMADB STUB)</div>
+        <div style="font-size:8px;color:var(--muted);margin-bottom:8px">
+          Scans all .md files and logs what would be indexed. Writes rooms/memory/index_log.json.
+        </div>
+        <button class="btn" onclick="runMemoryIndex()" style="font-size:8px;padding:6px 10px">SCAN VAULT</button>
+        <div id="memory-index-result" style="margin-top:6px"></div>
+      </div>
+
+    </div>`;
+}
+
+async function refreshMemoryStats() {
+  const body = document.getElementById('panel-body');
+  state.memoryStats = null;
+  body.innerHTML = `<div class="room-panel"><div class="loading-row"><div class="spinner"></div> REFRESHING...</div></div>`;
+  try {
+    const res = await fetch(`${API}/api/memory/stats`);
+    const data = await res.json();
+    state.memoryStats = data;
+  } catch (_) {}
+  _renderMemoryBody(body);
+}
+
+async function runMemoryCompress() {
+  const el = document.getElementById('memory-compress-result');
+  const keepN = parseInt(document.getElementById('memory-keep-n')?.value ?? '5', 10);
+  if (el) el.innerHTML = `<div class="loading-row"><div class="spinner"></div> COMPRESSING...</div>`;
+  try {
+    const res = await fetch(`${API}/api/memory/compress`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keep_n: keepN }),
+    });
+    const data = await res.json();
+    const freed = data.kb_freed > 0 ? `${data.kb_freed} KB freed` : '0 KB freed';
+    if (el) el.innerHTML = `<div style="color:var(--green);font-size:8px">
+      ✔ ${data.files_archived} files archived across ${data.rooms?.length || 0} rooms — ${freed}
+    </div>`;
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:8px">${escHtml(e.message)}</div>`;
+  }
+}
+
+async function runMemoryExport() {
+  const el = document.getElementById('memory-export-result');
+  if (el) el.innerHTML = `<div class="loading-row"><div class="spinner"></div> ZIPPING VAULT...</div>`;
+  try {
+    const res = await fetch(`${API}/api/memory/export`, { method: 'POST' });
+    const data = await res.json();
+    if (el) el.innerHTML = `<div style="color:var(--green);font-size:8px">
+      ✔ ${data.files_zipped} files → ${data.zip_mb} MB<br>
+      <span style="color:var(--muted)">${escHtml(data.zip_path)}</span>
+    </div>`;
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:8px">${escHtml(e.message)}</div>`;
+  }
+}
+
+async function runMemoryIndex() {
+  const el = document.getElementById('memory-index-result');
+  if (el) el.innerHTML = `<div class="loading-row"><div class="spinner"></div> SCANNING VAULT...</div>`;
+  try {
+    const res = await fetch(`${API}/api/memory/index`, { method: 'POST' });
+    const data = await res.json();
+    if (el) el.innerHTML = `<div style="color:var(--green);font-size:8px">
+      ✔ ${data.files_scanned} files scanned — ${data.total_kb} KB total<br>
+      <span style="color:var(--muted)">index_log.json written (ChromaDB stub)</span>
+    </div>`;
+  } catch (e) {
+    if (el) el.innerHTML = `<div style="color:var(--red);font-size:8px">${escHtml(e.message)}</div>`;
+  }
+}
+
 // ── Toast ──────────────────────────────────────────────────────
 let toastTimer = null;
 function toast(msg) {
@@ -2235,7 +2409,7 @@ function escHtml(str) {
     // Row 3
     { cx: 512,  cy: 3584, gx: 0, gy: 3, built: true  },  // Armory
     { cx: 1536, cy: 3584, gx: 1, gy: 3, built: true  },  // Radar Bay
-    { cx: 2560, cy: 3584, gx: 2, gy: 3, built: false },  // Memory Room
+    { cx: 2560, cy: 3584, gx: 2, gy: 3, built: true  },  // Memory Room
     { cx: 3584, cy: 3584, gx: 3, gy: 3, built: true  },  // Treasury
   ];
 
