@@ -22,13 +22,14 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ### Current State
 - 12 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health, War Room, Monitoring, Media Bay
-- Tested end-to-end: `POST /api/media-bay/run` returns TikTok hook, caption, hashtags; Instagram hook + caption (hashtags sometimes embedded in caption by LLM — content is still present, just not in separate field)
+- Tested end-to-end in browser and via API: panel renders correctly at col 4 row 3, Generate form works, cached report pre-fills title, TikTok + Instagram sections with 📋 COPY buttons display correctly
+- `POST /api/media-bay/run` returns TikTok hook, caption, hashtags; Instagram hook + caption (hashtags sometimes embedded in caption by LLM — content is still present, just not in separate field)
 - `GET /api/media-bay/status` returns cached report correctly
 - Publer integration present but untested (no `PUBLER_API_KEY` in env — skips gracefully)
-- Both endpoints confirmed in OpenAPI
+- Grid position corrected after initial build: was gx=1,gy=3 → fixed to gx=3,gy=2 (col 4 row 3)
 
 ### What's Next
-- **Radar Bay** — proposes system improvements, monitors agent performance (`gx=3, gy=2`, col 4 row 3)
+- **Radar Bay** — proposes system improvements, monitors agent performance (`gx=1, gy=3`, col 2 row 4)
 - Or: **Treasury** — cost tracking per agent, ROI dashboard (`gx=3, gy=3`, col 4 row 4)
 - Or: **OpenClaw cron schedules** — War Room 7am daily, Monitoring as watchdog
 
