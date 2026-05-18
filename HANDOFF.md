@@ -4,6 +4,43 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-18 — Armory
+
+### What We Built
+**Armory** — converts Radar Bay proposals into versioned SKILL.md files in the OpenClaw workspace (14th room built).
+
+- **`agents/armory_mvp.py`** — `generate_skill(proposal_id)`: loads latest Radar Bay report, finds the proposal by ID, builds a versioned system prompt, sends to LLM (Ollama → Claude fallback), strips any preamble before the frontmatter, returns preview dict (`proposal_id`, `proposal_title`, `slug`, `version`, `content`, `model_used`). `save_skill(content, slug, version)`: writes to `~/.openclaw/skills/<slug>_v<n>.md` and mirrors to vault `rooms/armory/skills/`, updates `rooms/armory/reports/latest_report.json` log. `get_skills_list()`: reads all `.md` files from SKILLS_DIR, parses frontmatter for name/version/description, returns sorted list. `_get_next_version(slug)`: counts `slug_v*.md` files to determine next version — always +1, never overwrites.
+- **`routers/armory.py`** — `POST /api/armory/generate`, `POST /api/armory/save`, `GET /api/armory/skills`
+- **`main.py`** — armory router wired in
+- **`game.js`** — `armorySkills`, `armoryPreview` in state; `armory: '⚔️ ARMORY'` in titles; added to renders dict; `renderArmory`, `_renderArmoryBody`, `generateSkill(proposalId)`, `saveSkill()`, `cancelSkillPreview()`, `refreshArmorySkills()` functions; ROOMS array `gx:0, gy:3, built:true`; proposal cards show Radar Bay proposals with ⚒ FORGE button; preview shown inline with raw SKILL.md content; Confirm & Save / Cancel buttons; saved skills list at bottom.
+- **`index.html`** — Armory at col 1, row 4 — coming-soon replaced with live `onclick="openPanel('armory')"`
+- **Vault** — `rooms/armory/room.md` updated + `rooms/armory/agents/armory/identity.md` written; `rooms/armory/reports/` and `rooms/armory/skills/` directories created
+
+### Bugs Hit
+- None. Clean build first pass. All three endpoints verified working end-to-end via curl.
+
+### Current State
+- 14 rooms fully built and working: CEO, Research, Design, Approval, Factory, Analytics, Pricing, CS, Shop Health, War Room, Monitoring, Media Bay, Radar Bay, Armory
+- `POST /api/armory/generate` with `{"proposal_id": 1}` returns correct preview dict (tested against live Radar Bay report)
+- `POST /api/armory/save` writes file to `~/.openclaw/skills/` and mirrors to vault (verified file created)
+- `GET /api/armory/skills` returns skills list with parsed frontmatter (verified after save)
+- Panel loads proposal list from `state.radarBayReport` (already in state if Radar Bay was run this session), shows skills list at bottom, confirm-before-save flow working
+
+### What's Next
+- **Treasury** — cost tracking per agent, ROI dashboard, spend guardrails (`gx=3, gy=3`, col 4 row 4)
+- Or: **Memory Room** — brain compression, ChromaDB re-indexing, cold storage (`gx=2, gy=3`, col 3 row 4)
+- Or: **OpenClaw cron schedules** — War Room 7am, Radar Bay Tuesday 6am, etc.
+
+### Gotchas for Next Session
+- SKILLS_DIR is `~/.openclaw/skills/` (hardcoded, not configurable) — skills are always written here regardless of BRAIN_PATH
+- Skill filenames: `<slug>_v<n>.md` — slug is slugified from proposal title (lowercase, alphanumeric + underscore, max 60 chars)
+- Version is determined at generate time (not save time) — if user generates without saving and generates again, they'll get v1 twice. This is intentional: the preview shows the version, and save uses what the preview returned.
+- Armory panel requires Radar Bay to have been run (either in the same session or cached in state) to show proposals. If `state.radarBayReport` is null, panel shows "RUN RADAR BAY FIRST" message.
+- LLM sometimes returns non-standard frontmatter (uses `title:` instead of `name:`, adds extra fields). The content is saved as-is — the `get_skills_list()` parser handles missing `name:` gracefully by falling back to the filename.
+- Vault mirror at `rooms/armory/skills/` is for Obsidian visibility only — OpenClaw reads from `~/.openclaw/skills/`
+
+---
+
 ## Session: 2026-05-18 — Radar Bay
 
 ### What We Built
