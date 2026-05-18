@@ -10,3 +10,5 @@ brain/approvals/
 *.log
 frontend/public/assets/generated/
 zurg(macbook_working_version)/
+backups/
+brain/rooms/
