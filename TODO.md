@@ -70,6 +70,14 @@
 - [ ] Swap .env secrets → HashiCorp Vault
 - [ ] Staging environment with test-mode flags
 
+### Flagged as missing from Final Vision — Max to review
+- [ ] Real SIM for WhatsApp — OpenClaw is wired but WhatsApp is disabled until a dedicated SIM is set up (Google Voice doesn't work with WhatsApp)
+- [ ] Telegram + iMessage channels — vision lists all three messaging targets; only WhatsApp is wired so far
+- [ ] Ideogram + Flux as image generation fallbacks — vision says "Imagen primary, Ideogram fallback, Flux backup"; currently Imagen only with no fallback if it fails
+- [ ] Gelato as fulfillment fallback — vision says "Printify (primary), Gelato (fallback)"; only Printify is wired
+- [ ] Reviews integration — Judge.me or Yotpo listed in vision tech stack; nothing built or planned
+- [ ] LLM split: Haiku for simple tasks, Sonnet for complex — vision specifies two tiers; currently all agents use the same model regardless of complexity
+
 ---
 
 ## Key File Locations (for new sessions)
