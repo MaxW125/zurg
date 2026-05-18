@@ -84,10 +84,21 @@ async def instruct_ceo(body: InstructMessage, background_tasks: BackgroundTasks)
         "design":    body.design,
     }
 
+    # Cron briefings bypass intent classification — go straight to LLM with the prompt
+    if body.source in ("cron_briefing", "cron_accumulate", "cron_alert"):
+        from agents.ceo_room_mvp import _load_identity
+        from agents.llm_client import call_local, call_claude
+        identity = _load_identity()
+        try:
+            response = await call_local(body.message, system=identity)
+        except Exception:
+            response = await call_claude(body.message, system=identity, room="ceo")
+        _save_message("zurg", response, source=body.source)
+        return {"response": response, "intent": "cron", "data": {}, "awaiting_approval": False}
+
     # For WhatsApp: return ack immediately, run pipeline in background
     if body.source == "whatsapp":
-        from agents.ceo_room_mvp import _classify_intent, _load_identity
-        from agents.llm_client import call_local
+        from agents.ceo_room_mvp import _classify_intent
         intent = await _classify_intent(body.message)
         if intent == "research":
             background_tasks.add_task(_run_pipeline_background, payload, body.source)
