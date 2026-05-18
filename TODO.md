@@ -71,7 +71,7 @@
 - [ ] Staging environment with test-mode flags
 
 ### Flagged as missing from Final Vision — Max to review
-- [ ] Real SIM for WhatsApp — OpenClaw is wired but WhatsApp is disabled until a dedicated SIM is set up (Google Voice doesn't work with WhatsApp)
+- [x] Real SIM for WhatsApp — verified with temp eSIM, WhatsApp is active and working via OpenClaw
 - [ ] Telegram + iMessage channels — vision lists all three messaging targets; only WhatsApp is wired so far
 - [ ] Ideogram + Flux as image generation fallbacks — vision says "Imagen primary, Ideogram fallback, Flux backup"; currently Imagen only with no fallback if it fails
 - [ ] Gelato as fulfillment fallback — vision says "Printify (primary), Gelato (fallback)"; only Printify is wired
