@@ -116,6 +116,7 @@
 - [ ] Spend guardrails — Treasury is built but guardrails need to be tested and verified end-to-end
 - [ ] Add Imagen cost logging to Treasury — designer agent should call `append_cost_entry` after each image generation (Imagen 4 Fast: ~$0.02/image)
 - [ ] Add Imagen API health check to Monitoring Room — alongside Anthropic/Shopify/Ollama checks
+- [ ] Brain reset before go-live — delete all test data: generated images (`frontend/public/assets/generated/`), approval verdicts (`rooms/approval/verdicts/`), research briefs (`rooms/research/briefs/`), all room reports (`rooms/*/reports/`), Treasury ledger (`rooms/treasury/costs.jsonl`), CEO chat history (`rooms/captain/chat_history.json`), `last_brief.json`, `last_design.json`. Do this immediately before switching out of dev mode so prod starts with a clean slate.
 - [ ] Publish first real product to Shopify — pipeline exists but nothing live yet
 - [ ] 7-day autonomous run — run the system hands-off for 7 days, fix whatever breaks (Definition of Done milestone)
 - [ ] Design feedback loop — after 10–20 design cycles, review what Zurg approved/rejected and tune the approval agent's taste model
