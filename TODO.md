@@ -24,13 +24,19 @@
 - [x] Vault cleanup — eliminated `hot/` folder; data reorganised into `rooms/` subfolders: `rooms/research/briefs/`, `rooms/approval/verdicts/`, `rooms/analytics/reports/`, `rooms/captain/` (chat history + Shopify token doc)
 - [x] Mac Mini deployment — server running on dedicated machine, global Homebrew Python (no venv), launchd plist configured, restart-server.sh
 - [x] project notes + HANDOFF.md — comprehensive cold-start documentation and session handoff system
+- [x] Anthropic API key migrated to zurg-account@example.com — Claude fallback live on all agents
+- [x] Google Imagen API migrated to zurg-account@example.com — Imagen 4 Fast confirmed generating images
+- [x] Printify migrated to zurg-account@example.com — new token + shop ID (<PRINTIFY_SHOP_ID>), Kraken & Co. connected
+- [x] Fixed `last_design.json` not updating on direct `/api/rooms/design/run` calls — was only saved via CEO agent path
+- [x] Fixed Printify product title bug — `title` variable was clobbered by loop variable in `printify_client.py`, resulting in products named "Ash / 5XL"
+- [x] Full pipeline end-to-end verified with new credentials — research → Imagen design → approval → Printify mockup → Shopify draft
 
 ---
 
 ## Priority List (work through in order)
 
 **P1 — Unblocks everything**
-- [ ] Migrate all services to zurg-account@example.com — Anthropic, Google, Printify, Publer, OpenClaw
+- [x] Migrate all services to zurg-account@example.com — Anthropic ✅, Google ✅, Printify ✅, Publer (deferred — needs Business plan), OpenClaw ✅ (already on prod)
 
 **P2 — Makes the system production-ready**
 - [ ] LLM audit — right model per agent; Haiku for simple tasks (intent classification, acks), Sonnet for complex (research, briefings). Crosses off the LLM split Final Vision item.
@@ -108,10 +114,12 @@
 ### Gap Items (Final Vision not yet tracked)
 - [ ] Approval Engine Phase 2 — reach 100 verdicts with >85% accuracy to unlock agent-predicted approvals (happens through use, no code needed)
 - [ ] Spend guardrails — Treasury is built but guardrails need to be tested and verified end-to-end
+- [ ] Add Imagen cost logging to Treasury — designer agent should call `append_cost_entry` after each image generation (Imagen 4 Fast: ~$0.02/image)
+- [ ] Add Imagen API health check to Monitoring Room — alongside Anthropic/Shopify/Ollama checks
 - [ ] Publish first real product to Shopify — pipeline exists but nothing live yet
 - [ ] 7-day autonomous run — run the system hands-off for 7 days, fix whatever breaks (Definition of Done milestone)
 - [ ] Design feedback loop — after 10–20 design cycles, review what Zurg approved/rejected and tune the approval agent's taste model
-- [ ] Wire Publer to zurg-account@example.com — Media Bay is built but Publer account needs migrating before social posts can be scheduled
+- [ ] Wire Publer to zurg-account@example.com — account created on zurg-account@example.com but API access requires Business plan ($17/mo); skip until TikTok + Instagram accounts are set up and social posting is a real priority
 
 ---
 

@@ -82,7 +82,15 @@ async def get_latest_design():
 @router.post("/design/run")
 async def run_design_room(body: DesignInput):
     """Trigger the Designer agent directly."""
-    return await run_designer(body.model_dump())
+    result = await run_designer(body.model_dump())
+    brain = os.getenv("BRAIN_PATH", "./brain")
+    path = os.path.join(brain, "rooms", "captain", "last_design.json")
+    try:
+        with open(path, "w") as f:
+            json.dump(result, f, indent=2)
+    except Exception:
+        pass
+    return result
 
 
 @router.post("/factory/run")

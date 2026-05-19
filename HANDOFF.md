@@ -4,6 +4,48 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-19 — Service Migration + Pipeline Fixes
+
+### What We Did
+- Migrated Anthropic API key to zurg-account@example.com — Claude fallback now live on all agents (was 401 all session)
+- Migrated Google Imagen API to zurg-account@example.com via AI Studio — Imagen 4 Fast confirmed generating images
+- Migrated Printify to zurg-account@example.com — new token, new shop ID (<PRINTIFY_SHOP_ID>), Kraken & Co. reconnected to Shopify
+- Deferred Publer migration — API requires Business plan ($17/mo); skip until TikTok + Instagram accounts exist
+- OpenClaw already on prod — no migration needed
+- Fixed `.env` whitespace — all keys had stray leading spaces, cleaned up
+- Gitignored `backups/` and `brain/rooms/` (runtime data), committed `refresh-shopify-token.sh`
+- Fixed `last_design.json` not updating on direct `/api/rooms/design/run` calls — router now writes it after every design run
+- Fixed critical Printify title bug in `agents/printify_client.py` — loop variable `title` was clobbering the product title parameter, causing products to be published as "Ash / 5XL". Fixed by renaming loop var to `vtitle`
+- Verified full end-to-end pipeline with new credentials: research → Imagen design → approval → Printify mockup → Shopify draft (test product created and deleted)
+
+### Bugs Fixed
+- **Printify title clobber** (`agents/printify_client.py` line ~120): `for v in variants: title = v.get("title", "")` overwrote the `title` parameter. Renamed to `vtitle`. This was causing every published product to have a variant name as its title and 0 mockup images.
+- **`last_design.json` not saved on direct design runs** (`routers/rooms.py`): `/api/rooms/design/run` wasn't writing `last_design.json`, so the Approval Room in the browser kept showing the old design after a fresh run. Fixed by writing the file in the router after every design call.
+
+### Current State
+- All credentials live on zurg-account@example.com: Anthropic ✅, Google ✅, Printify ✅, Shopify ✅, OpenClaw ✅
+- Full pipeline verified working end-to-end with real Imagen images and real Printify mockups
+- Monitoring shows all systems green (Anthropic, Shopify, Ollama all healthy)
+- Publer account created on zurg-account@example.com but API deferred (needs paid plan + social accounts first)
+
+### What's Next
+**P2 — LLM audit** is the natural next step now that Claude is live:
+- Audit each agent and assign the right model: Haiku for simple tasks (intent classification, acks, CS replies), Sonnet for complex (research briefs, War Room synthesis, approval analysis)
+- This directly reduces cost and improves speed for lightweight agents
+- File to edit: `agents/llm_client.py` — add `call_claude_haiku()` function, then update each agent
+
+**Or: Imagen cost logging in Treasury** — quick win now that Imagen is actually running:
+- `agents/designer_room_mvp.py` — call `append_cost_entry("design", "imagen-4-fast", 0, 0)` with a fixed cost per image (~$0.02) after each successful generation
+- `agents/treasury_mvp.py` — add Imagen as a separate cost category (fixed per-image, not per-token)
+
+### Gotchas
+- Printify shop ID changed: old was `<OLD_PRINTIFY_SHOP_ID>` (personal account), new is `<PRINTIFY_SHOP_ID>` (zurg account) — already updated in `.env`
+- The Printify title bug was silent — products were created and published with wrong titles and no mockup images. Always check Factory Room output for `mockup_used: true`
+- `last_design.json` is now written by both `routers/rooms.py` (direct design runs) and `agents/ceo_room_mvp.py` (CEO-delegated runs) — both paths are covered
+- Google Imagen requires billing enabled on the AI Studio project — free tier blocks Imagen even with a valid key
+
+---
+
 ## Session: 2026-05-18 — Todo Cleanup + Priority List
 
 ### What We Did

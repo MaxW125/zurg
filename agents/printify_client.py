@@ -117,8 +117,8 @@ async def create_product(
     from collections import defaultdict
     color_groups: dict[str, list] = defaultdict(list)
     for v in variants:
-        title = v.get("title", "")
-        color_key = title.split(" / ")[0].strip().lower() if " / " in title else title.lower()
+        vtitle = v.get("title", "")
+        color_key = vtitle.split(" / ")[0].strip().lower() if " / " in vtitle else vtitle.lower()
         color_groups[color_key].append(v)
 
     preferred_key = preferred_color.lower()
