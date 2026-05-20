@@ -4,6 +4,58 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-20 — Etsy API + Product Catalog Expansion
+
+### What We Did
+- Wired Etsy API (keystring `v1qj2hbv7gbvggvpwcaz2opw`) into three places:
+  - **Market research** (`market_intel.py`) — Etsy API is now the fallback between Everbee and DDG; searches 5 randomly-sampled queries per run across apparel, mugs, tote bags, posters, phone cases, aprons, pillows
+  - **Shop Health** (`shop_health_room_mvp.py`) — now audits KrakenAndCoDesigns Etsy listings alongside Shopify; checks title length, tag count (of 13), description, views; LLM generates per-listing fix recommendations
+  - **Monitoring** (`monitoring_room_mvp.py`) — added Etsy API health check; now shows 6 systems including "Etsy API — Key valid — KrakenAndCoDesigns"
+- Added `ETSY_API_KEY`, `ETSY_SHARED_SECRET`, `ETSY_SHOP_NAME`, `ETSY_SHOP_ID=<ETSY_SHOP_ID>` to `.env`
+- Expanded product catalog from 3 → 10 products (`product_catalog.py`):
+  - Added: Crewneck Sweatshirt (bp 49/MD), Ceramic Mug (bp 478/MD), Tote Bag (bp 1313/MD), Poster (bp 282/Sensaria), Tough Phone Case (bp 269/SPOKE), Cotton Apron (bp 713/T Shirt and Sons), Throw Pillow (bp 1572/MWW On Demand)
+  - All Monster Digital except Poster (Sensaria), Phone Case (SPOKE), Apron (T Shirt and Sons), Pillow (MWW)
+  - Each entry now has `preferred_color` so factory uses white for mugs/totes/posters, black for apparel
+- Updated `factory_room_mvp.py` — `shirt_color` now defaults to `blueprint["preferred_color"]` instead of hardcoding black
+- Updated `market_intel.py` — 16 Etsy search queries across all product categories, sampled to 5 per run
+- Updated `researcher_room_mvp.py` — system prompt now guides LLM toward right product type per niche; `_parse_brief()` hardened to normalise LLM key aliases
+
+### Bugs Fixed
+- **Research 500 error** — Etsy API was doing 16 sequential queries, creating ~3000+ char context that overwhelmed Ollama → LLM returned malformed JSON → `KeyError: 'niche'`. Fixed with: (1) random sample 5 queries per run, (2) `_parse_brief()` normalises key aliases
+
+### Current State
+- 10 products in catalog, all verified with correct blueprint IDs and providers
+- Etsy API confirmed working: `x-api-key: keystring:secret` header format
+- Research runs successfully: produced "Alaska Wildlife Enthusiasts — Tote Bag" and "Ferret Enthusiast Gift — Tote Bag" unprompted, showing non-apparel products now in rotation
+
+### What's Next
+**P2 — LLM audit** (assign Haiku vs Sonnet per agent):
+
+**IMPORTANT constraint for this audit:** Some agents require reliable structured JSON output — they must use Sonnet, not Haiku:
+- **Researcher** — returns `{niche, product_type, target_audience, keywords, design_direction}`; also receives large context (Etsy market data ~3000 chars). Haiku is unreliable for JSON at this context size. → **Sonnet**
+- **Approval** — returns verdict JSON. → **Sonnet**
+- **Pricing** — returns per-product recommendation JSON. → **Sonnet**
+- **Radar Bay** — returns proposals array JSON. → **Sonnet**
+- **Armory** — returns SKILL.md with frontmatter. → **Sonnet**
+
+Safe to use Haiku (free text / simple classification):
+- **CEO intent classifier** — just maps input to a label ("research", "analytics", etc.)
+- **CS Room** — drafts email replies; quality matters but not JSON strictness
+- **Factory description** — 2-3 sentences of free text
+- **Media Bay** — TikTok/Instagram captions; free text
+- **War Room** — synthesis prose
+
+File to edit: `agents/llm_client.py` — add `call_claude_haiku()` function, then update each agent's `call_claude()` call to use the right tier.
+
+### Gotchas
+- Etsy API header format is `x-api-key: {ETSY_API_KEY}:{ETSY_SHARED_SECRET}` (colon-separated, not two separate headers)
+- Etsy `_parse_brief()` key alias normalisation is a safety net — keep it even after switching to Sonnet
+- Product preferred_color "black" for phone cases won't match phone model variant names (e.g. "iPhone 11") — this is intentional, causes all models to be included in the variant set
+- Cotton Apron variants: "Black / One size" and "White / One size" — preferred_color "black" correctly selects the black apron
+- Throw Pillow variants are sizes only (25"×18") — preferred_color "white" doesn't match but all sizes are included as fallback
+
+---
+
 ## Session: 2026-05-20 — Etsy Dual-Channel Publishing
 
 ### What We Did
