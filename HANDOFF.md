@@ -4,6 +4,28 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-20 — Researcher Market Intel Upgrade (DONE)
+
+### What We Built
+- **`agents/market_intel.py`** — Replaced 16 static niche searches with 14 product-anchored terms (2 per product type in our catalog). Every search result now maps to a product we can actually make. Rewrote `_fetch_etsy_market()` to aggregate all listings by favorites and extract tag frequency from the top 30 — returns a synthesised summary (~1300 chars) instead of a raw per-category dump (was ~7500 chars). Added `get_seasonal_context()`: a Haiku call with today's date that returns upcoming holidays/events within the next 4 weeks relevant to gift-buying. Returns `""` if nothing notable, never fabricates.
+- **`agents/researcher_room_mvp.py`** — Calls `gather_trends()` and `get_seasonal_context()` in parallel via `asyncio.gather`. Injects both as separate prompt sections: `LIVE ETSY DATA` and `UPCOMING EVENTS`. Prompt rewritten to use Etsy tag frequency as the primary niche signal, with seasonal angle as an optional boost.
+
+### Verified
+- Market data: 1303 chars (down from 7500+), aggregated tag frequency + top listings by favorites
+- Seasonal context on 2026-05-20: Father's Day (June 21), Pride Month (June 1–30), Graduation Season — all accurate, none fabricated
+- Full research run succeeded end-to-end: "Dog Lover Gift — Tote Bag"
+
+### What's Next
+The Researcher is now significantly stronger. Next priorities are downstream:
+
+**P2 — Remaining:**
+- Etsy order/revenue OAuth 2.0 — needs real orders first
+- Ideogram + Flux image generation fallbacks
+
+**Possible quick win:** Run 5–10 autonomous research cycles and review the briefs — are the niches getting more specific and commercially interesting? If yes, the signal is working. If the briefs are still generic, the Ollama model may be the weak link (not the data) and forcing Claude Sonnet for the researcher could help.
+
+---
+
 ## Session: 2026-05-20 — LLM Model Split (DONE)
 
 ### What We Built
