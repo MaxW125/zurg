@@ -4,6 +4,30 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-20 — Fully Autonomous Pipeline (DONE)
+
+### What We Built
+- **`main.py`** — Added FastAPI `lifespan` handler. Researcher loop now auto-starts on every server boot. Confirmed working: `[researcher] Autonomous loop started` appears in logs immediately after startup.
+- **`agents/designer_room_mvp.py`** — `run_designer()` now accepts `denial_context` in the input dict. When set, it prepends owner feedback to the image prompt so redesigns directly address the rejection reason.
+- **`routers/rooms.py`** — After every `/api/rooms/design/run` call, notifies owner via WhatsApp: "🎨 Design ready: [niche] — [product_type]. Open the Approval Room." Shows "Redesign ready" if denial_context was present.
+- **`routers/approval.py`** — On deny: saves verdict, then triggers `_trigger_redesign()` as a BackgroundTask — loads last_brief.json, injects denial feedback, re-runs designer, saves new last_design.json, texts owner when ready. On approve: unchanged — factory publishes to Shopify + Etsy, factory already texts owner on completion.
+
+### Full Pipeline Flow (live)
+```
+Server boot → Researcher loop auto-starts
+  → Brief complete → Designer triggered (via HTTP)
+    → Design complete → WhatsApp: "Design ready — open Approval Room"
+      → Owner approves → Factory publishes → WhatsApp: "Published: [title] [URL]"
+      → Owner denies  → Designer retries with feedback → WhatsApp: "Redesign ready"
+```
+
+### What's Next
+- Test the full loop end-to-end: wait for a design notification, approve/deny it, verify the downstream WhatsApp fires correctly
+- Consider rate-limiting the redesign loop — currently a denial always triggers exactly one redesign. If Max denies repeatedly, it chains. Could add a max_redesigns counter per brief.
+- The researcher runs every 4 hours (6/day cap). Adjust `delay_minutes` and `max_per_day` in `research_config.json` inside the vault if needed.
+
+---
+
 ## Session: 2026-05-20 — Researcher Market Intel Upgrade (DONE)
 
 ### What We Built
