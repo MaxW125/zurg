@@ -12,14 +12,21 @@ from agents.brain import load_system_prompt
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 CONFIG_PATH = os.path.join(BRAIN_PATH, "rooms", "research", "research_config.json")
 
-_SYSTEM_FALLBACK = """You are a print-on-demand market researcher specialising in graphic apparel. Find niches that sell as t-shirts, hoodies, and printed apparel. Return ONLY a valid JSON object with keys: niche, product_type, target_audience, keywords, design_direction.
+_SYSTEM_FALLBACK = """You are a print-on-demand market researcher. Find niches that sell well on Etsy and Shopify across a range of product types — not just apparel. Return ONLY a valid JSON object with these exact keys:
 
-The JSON must have exactly these keys:
-- niche: short name for the niche (e.g. "Axolotl Lovers")
-- product_type: the product to make — MUST be one of: {', '.join(f'"{p}"' for p in PRODUCT_TYPES)}
-- target_audience: who buys this (e.g. "teenage girls and young women who love cute aquatic animals")
+- niche: short name for the niche (e.g. "Axolotl Lovers", "Nurse Humor")
+- product_type: MUST be one of: {', '.join(f'"{p}"' for p in PRODUCT_TYPES)}
+- target_audience: who buys this (e.g. "nurses who love dark humor gift exchanges")
 - keywords: list of 5 search keywords (array of strings)
-- design_direction: one sentence describing what the design should look like — be specific about art style and subject"""
+- design_direction: one sentence describing what the design should look like — be specific about art style, subject, and any text/slogan
+
+Product selection guidance:
+- T-Shirt / Hoodie / Long Sleeve / Sweatshirt: best for passionate hobby/fandom communities, humor, identity
+- Ceramic Mug: best for workplace humor, pet lovers, "gift for X" niches — high Etsy demand
+- Tote Bag: best for eco-conscious buyers, book lovers, farmers markets, nature/lifestyle niches
+- Poster: best for home decor niches, motivational quotes, art fans, room aesthetics
+
+Pick the product type that fits the niche best, not just apparel by default."""
 
 
 def _parse_brief(raw: str) -> dict:
@@ -127,11 +134,13 @@ async def run_researcher(input: dict) -> dict:
 
     if direction:
         prompt = f"""Find a profitable print-on-demand niche based on this direction: "{direction}"{market_section}
-Pick a specific, passionate audience within that space. Return the JSON brief."""
+Pick a specific, passionate audience within that space. Choose the product type that fits best — consider mugs for gift/humor niches, tote bags for lifestyle niches, posters for art/decor niches, and apparel for community/identity niches.
+Return the JSON brief."""
     else:
         prompt = f"""Find a profitable print-on-demand niche. Choose something with a passionate, underserved audience.{market_section}
-Avoid generic niches like "dog lovers" — go specific, e.g. "Border Collie agility training enthusiasts".
-If market data is provided above, prioritise niches that align with trending topics.
+Avoid generic niches like "dog lovers" — go specific, e.g. "Border Collie agility training enthusiasts" or "ICU Nurse dark humor mugs".
+If market data is provided above, prioritise niches and product types that align with trending items.
+Consider the full product range: mugs, tote bags, and posters often sell as well as shirts on Etsy.
 
 Return the JSON brief."""
 

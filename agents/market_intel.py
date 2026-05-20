@@ -23,13 +23,25 @@ DDG_QUERIES = [
     "most profitable print on demand shirt themes passionate communities",
 ]
 
-# Keyword sets that surface different niche types on Etsy
+# Keyword sets covering a range of product types and niche categories.
+# Each tuple is (search_keyword, category_label).
 _ETSY_MARKET_QUERIES = [
-    ("funny animal shirt",       "Animals & Pets"),
-    ("hobby enthusiast tee",     "Hobby Niches"),
-    ("funny profession shirt",   "Jobs & Careers"),
-    ("outdoor adventure tshirt", "Outdoor/Nature"),
-    ("niche graphic tee gift",   "Gift Niches"),
+    # Apparel
+    ("funny animal shirt",            "Apparel — Animals & Pets"),
+    ("hobby enthusiast tee",          "Apparel — Hobby Niches"),
+    ("funny profession shirt",        "Apparel — Jobs & Careers"),
+    ("outdoor adventure sweatshirt",  "Apparel — Outdoor/Nature"),
+    ("niche graphic tee gift",        "Apparel — Gift Niches"),
+    # Mugs
+    ("funny coffee mug gift",         "Mugs — Humor & Gifts"),
+    ("animal lover mug",              "Mugs — Animals & Pets"),
+    ("hobby niche mug",               "Mugs — Hobby Niches"),
+    # Tote Bags
+    ("funny tote bag gift",           "Tote Bags — Humor & Gifts"),
+    ("nature lover canvas tote",      "Tote Bags — Nature/Lifestyle"),
+    # Posters & Prints
+    ("motivational art print poster", "Posters — Motivational"),
+    ("animal illustration print",     "Posters — Animals & Nature"),
 ]
 
 

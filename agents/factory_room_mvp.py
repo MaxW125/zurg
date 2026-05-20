@@ -74,10 +74,10 @@ async def run_factory(input: dict) -> dict:
     niche        = input.get("niche", "Custom Design")
     product_type = input.get("product_type", "Unisex T-Shirt")
     image_path   = input.get("image_path", "")
-    # Clamp to black or white — other colors produce unpredictable Printify mockup shades
-    _raw_color   = input.get("shirt_color", "black").lower()
-    shirt_color  = "white" if _raw_color == "white" else "black"
     blueprint    = get_blueprint(product_type)
+    # Use preferred color from catalog; caller can override via shirt_color input
+    _raw_color   = input.get("shirt_color", blueprint.get("preferred_color", "black")).lower()
+    shirt_color  = _raw_color
 
     # Step 1 — write product description
     desc_prompt = f"""Write a product description for a {product_type} in the "{niche}" niche.
