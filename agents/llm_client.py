@@ -27,7 +27,11 @@ def _check_cap() -> None:
 
 
 async def call_local(prompt: str, system: str = "") -> str:
-    """Call Ollama (llama3.2). Raises on failure so callers can fall back to Claude."""
+    """Call Ollama (llama3.2). Raises on failure so callers can fall back to Claude.
+    Set OLLAMA_ENABLED=false in .env to skip Ollama entirely and always use Claude."""
+    if os.getenv("OLLAMA_ENABLED", "true").lower() == "false":
+        raise RuntimeError("Ollama disabled — using Claude")
+
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -77,7 +81,11 @@ async def call_claude_haiku(prompt: str, system: str = "", room: str = "unknown"
 
 
 async def call_local_stream(prompt: str, system: str = ""):
-    """Streaming version of call_local. Yields text chunks."""
+    """Streaming version of call_local. Yields text chunks.
+    Set OLLAMA_ENABLED=false to skip and fall back to call_claude_stream."""
+    if os.getenv("OLLAMA_ENABLED", "true").lower() == "false":
+        raise RuntimeError("Ollama disabled — using Claude")
+
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
