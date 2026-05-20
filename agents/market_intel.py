@@ -42,6 +42,13 @@ _ETSY_MARKET_QUERIES = [
     # Posters & Prints
     ("motivational art print poster", "Posters — Motivational"),
     ("animal illustration print",     "Posters — Animals & Nature"),
+    # Phone Cases
+    ("funny phone case niche",        "Phone Cases — Humor & Niche"),
+    ("cute animal phone case",        "Phone Cases — Animals & Pets"),
+    # Aprons
+    ("funny apron gift",              "Aprons — Humor & Gifts"),
+    # Pillows
+    ("decorative throw pillow niche", "Pillows — Home Decor"),
 ]
 
 
@@ -130,18 +137,22 @@ def _fetch_everbee() -> str:
 # ── Etsy API ──────────────────────────────────────────────────
 
 def _fetch_etsy_market() -> str:
-    """Search public Etsy listings for trending apparel niches using the Etsy API."""
+    """Search public Etsy listings for trending niches using the Etsy API.
+    Samples 5 random query categories per run to keep response time fast."""
     api_key = os.getenv("ETSY_API_KEY", "")
     secret  = os.getenv("ETSY_SHARED_SECRET", "")
     if not api_key or not secret:
         return ""
+
+    import random
+    queries = random.sample(_ETSY_MARKET_QUERIES, min(5, len(_ETSY_MARKET_QUERIES)))
 
     headers = {"x-api-key": f"{api_key}:{secret}"}
     lines   = ["=== Etsy Market Intelligence (Live Listing Data) ==="]
 
     try:
         with httpx.Client(timeout=20) as client:
-            for keyword, category in _ETSY_MARKET_QUERIES:
+            for keyword, category in queries:
                 r = client.get(
                     f"{ETSY_BASE}/application/listings/active",
                     headers=headers,

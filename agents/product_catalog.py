@@ -1,14 +1,17 @@
 """
 Printify product catalog — maps product types to blueprint IDs and print providers.
 
-Blueprint IDs confirmed working (all via Monster Digital provider 29 except Poster):
-  6    — Bella+Canvas 3001 Unisex T-Shirt       (provider 29)
-  9    — Gildan 18500 Hoodie                    (provider 29)
-  11   — Bella+Canvas 3501 Long Sleeve          (provider 29)
-  49   — Gildan Heavy Blend Crewneck Sweatshirt (provider 29)
-  478  — Ceramic Mug 11oz/15oz                 (provider 29)
-  1313 — Cotton Canvas Tote Bag                (provider 29)
-  282  — Matte Vertical Poster                 (provider 2: Sensaria)
+Blueprint IDs confirmed working:
+  6    — Bella+Canvas 3001 Unisex T-Shirt       (provider 29: Monster Digital)
+  9    — Gildan 18500 Hoodie                    (provider 29: Monster Digital)
+  11   — Bella+Canvas 3501 Long Sleeve          (provider 29: Monster Digital)
+  49   — Gildan Heavy Blend Crewneck Sweatshirt (provider 29: Monster Digital)
+  478  — Ceramic Mug 11oz/15oz                 (provider 29: Monster Digital)
+  1313 — Cotton Canvas Tote Bag                (provider 29: Monster Digital)
+  282  — Matte Vertical Poster                 (provider 2:  Sensaria)
+  269  — Tough Phone Cases                     (provider 1:  SPOKE Custom Products)
+  713  — Cotton Apron                          (provider 6:  T Shirt and Sons)
+  1572 — Throw Pillow                          (provider 10: MWW On Demand)
 
 preferred_color: used to prioritise variant selection in create_product().
   Apparel: "black" (dark shirt shows most designs well)
@@ -61,6 +64,27 @@ CATALOG: dict[str, dict] = {
     "Poster": {
         "blueprint_id":    282,
         "print_provider":  2,
+        "position":        "front",
+        "preferred_color": "white",
+        "default_colors":  ["white"],
+    },
+    "Tough Phone Case": {
+        "blueprint_id":    269,
+        "print_provider":  1,
+        "position":        "front",
+        "preferred_color": "black",  # won't match phone model names — all models included
+        "default_colors":  ["black"],
+    },
+    "Cotton Apron": {
+        "blueprint_id":    713,
+        "print_provider":  6,
+        "position":        "front",
+        "preferred_color": "black",
+        "default_colors":  ["black", "white"],
+    },
+    "Throw Pillow": {
+        "blueprint_id":    1572,
+        "print_provider":  10,
         "position":        "front",
         "preferred_color": "white",
         "default_colors":  ["white"],

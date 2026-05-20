@@ -21,26 +21,52 @@ _SYSTEM_FALLBACK = """You are a print-on-demand market researcher. Find niches t
 - design_direction: one sentence describing what the design should look like — be specific about art style, subject, and any text/slogan
 
 Product selection guidance:
-- T-Shirt / Hoodie / Long Sleeve / Sweatshirt: best for passionate hobby/fandom communities, humor, identity
-- Ceramic Mug: best for workplace humor, pet lovers, "gift for X" niches — high Etsy demand
-- Tote Bag: best for eco-conscious buyers, book lovers, farmers markets, nature/lifestyle niches
-- Poster: best for home decor niches, motivational quotes, art fans, room aesthetics
+- T-Shirt / Hoodie / Long Sleeve / Sweatshirt: passionate hobby/fandom communities, humor, identity
+- Ceramic Mug: workplace humor, pet lovers, "gift for X" niches — very high Etsy demand
+- Tote Bag: eco-conscious buyers, book lovers, farmers markets, nature/lifestyle niches
+- Poster: home decor, motivational quotes, art fans, room aesthetics
+- Tough Phone Case: younger audiences, fandoms, funny/cute niches, personality-driven designs
+- Cotton Apron: cooking humor, BBQ dads, dog moms, "wine o'clock", baking niches
+- Throw Pillow: home decor, pet portraits, quote niches, cosy/hygge aesthetics
 
 Pick the product type that fits the niche best, not just apparel by default."""
 
 
 def _parse_brief(raw: str) -> dict:
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        pass
-    match = re.search(r'\{.*\}', raw, re.DOTALL)
-    if match:
+    def _extract(text: str) -> dict | None:
         try:
-            return json.loads(match.group())
+            return json.loads(text)
         except json.JSONDecodeError:
-            pass
-    raise ValueError(f"Could not parse JSON from response: {raw[:200]}")
+            return None
+
+    data = _extract(raw)
+    if not data:
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        data = _extract(match.group()) if match else None
+    if not data:
+        raise ValueError(f"Could not parse JSON from LLM response: {raw[:200]}")
+
+    # Normalise common alternative key names LLMs return
+    key_aliases = {
+        "niche":            ["niche", "niche_name", "title", "name"],
+        "product_type":     ["product_type", "product", "type"],
+        "target_audience":  ["target_audience", "audience", "target"],
+        "keywords":         ["keywords", "tags", "search_terms"],
+        "design_direction": ["design_direction", "design", "direction", "description"],
+    }
+    normalised = {}
+    for canonical, aliases in key_aliases.items():
+        for alias in aliases:
+            if alias in data:
+                normalised[canonical] = data[alias]
+                break
+        if canonical not in normalised:
+            normalised[canonical] = ""
+
+    if not normalised["niche"]:
+        raise ValueError(f"LLM response missing 'niche' key. Keys found: {list(data.keys())}")
+
+    return normalised
 
 
 def _save_brief(brief: dict) -> str:
@@ -140,7 +166,7 @@ Return the JSON brief."""
         prompt = f"""Find a profitable print-on-demand niche. Choose something with a passionate, underserved audience.{market_section}
 Avoid generic niches like "dog lovers" — go specific, e.g. "Border Collie agility training enthusiasts" or "ICU Nurse dark humor mugs".
 If market data is provided above, prioritise niches and product types that align with trending items.
-Consider the full product range: mugs, tote bags, and posters often sell as well as shirts on Etsy.
+Consider the full product range: mugs, tote bags, posters, phone cases, aprons, and throw pillows often sell as well as shirts on Etsy.
 
 Return the JSON brief."""
 
