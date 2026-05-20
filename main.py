@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,7 +6,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-app = FastAPI(title="Zurg MVP")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from agents.researcher_room_mvp import start_loop
+    start_loop()
+    yield
+
+
+app = FastAPI(title="Zurg MVP", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from agents.researcher_room_mvp import run_researcher, start_loop, stop_loop, loop_status
 from agents.designer_room_mvp import run_designer
 from agents.factory_room_mvp import run_factory
+from agents.notify import notify
 
 router = APIRouter(prefix="/api/rooms")
 
@@ -19,6 +20,7 @@ class DesignInput(BaseModel):
     target_audience: str
     keywords: list[str]
     design_direction: str
+    denial_context: str = ""
 
 
 class FactoryInput(BaseModel):
@@ -90,6 +92,11 @@ async def run_design_room(body: DesignInput):
             json.dump(result, f, indent=2)
     except Exception:
         pass
+    redesign_note = " (redesign)" if body.denial_context else ""
+    await notify(
+        f"🎨 Design ready{redesign_note}: {result['niche']} — {result['product_type']}\n"
+        "Open the Approval Room to approve or deny."
+    )
     return result
 
 

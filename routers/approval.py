@@ -2,9 +2,10 @@ import os
 import json
 import glob
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 from agents.factory_room_mvp import run_factory
+from agents.designer_room_mvp import run_designer
 from agents.approval_room_mvp import analyze_design, auto_decide
 from agents.notify import notify
 
@@ -146,20 +147,52 @@ async def get_verdicts():
     return _load_verdicts()
 
 
+async def _trigger_redesign(feedback: str, body: ApprovalDecision) -> None:
+    """Load the last brief, inject denial feedback, and re-run the designer."""
+    brain = os.getenv("BRAIN_PATH", "./brain")
+    brief_path = os.path.join(brain, "rooms", "captain", "last_brief.json")
+    try:
+        with open(brief_path) as f:
+            brief = json.load(f)
+    except Exception:
+        brief = {
+            "niche": body.niche,
+            "product_type": body.product_type,
+            "target_audience": "",
+            "keywords": body.keywords,
+            "design_direction": body.design_direction,
+        }
+
+    brief["denial_context"] = feedback or "No specific feedback — try a different visual approach."
+
+    try:
+        design = await run_designer(brief)
+        design_path = os.path.join(brain, "rooms", "captain", "last_design.json")
+        with open(design_path, "w") as f:
+            json.dump(design, f, indent=2)
+        await notify(
+            f"🎨 Redesign ready: {design['niche']} — {design['product_type']}\n"
+            "Open the Approval Room to approve or deny."
+        )
+    except Exception as e:
+        await notify(f"⚠️ Redesign failed for {body.niche}: {str(e)[:100]}")
+
+
 @router.post("/decide")
-async def decide_approval(body: ApprovalDecision):
+async def decide_approval(body: ApprovalDecision, background_tasks: BackgroundTasks):
     """
     Owner approves or rejects a design.
-    - Always saves a verdict file to brain/approvals/ for the Approval Agent to learn from.
-    - approved=True  → Factory agent publishes to Shopify
-    - approved=False → saves rejection + returns acknowledgement
+    - Always saves a verdict file for the Approval Agent to learn from.
+    - approved=True  → Factory publishes to Shopify + Etsy, notifies owner
+    - approved=False → saves rejection, triggers redesign in background with feedback
     """
     _save_verdict(body)
 
     if not body.approved:
+        background_tasks.add_task(_trigger_redesign, body.feedback, body)
         return {
             "approved": False,
-            "message": "Design rejected and logged. The Approval Agent will learn from your feedback.",
+            "message": "Design rejected. Zurg is generating a new design — you'll get a text when it's ready.",
         }
 
     if not body.image_path:

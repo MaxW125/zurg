@@ -25,12 +25,18 @@ TRANSPARENCY_SUFFIX = "flat vector illustration on a pure transparent background
 
 
 def _build_prompt_request(brief: dict) -> str:
+    denial = brief.get("denial_context", "").strip()
+    denial_section = (
+        f"\n\nPREVIOUS DESIGN WAS REJECTED — Owner feedback: {denial}\n"
+        "Create a new design that directly addresses this feedback. Do not repeat the previous approach."
+    ) if denial else ""
+
     return f"""Write an image generation prompt for a print-on-demand {brief['product_type']} design.
 
 Niche: {brief['niche']}
 Target audience: {brief['target_audience']}
 Design direction: {brief['design_direction']}
-Keywords: {', '.join(brief['keywords'])}
+Keywords: {', '.join(brief['keywords'])}{denial_section}
 
 Output only the image prompt."""
 
