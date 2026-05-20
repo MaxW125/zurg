@@ -4,6 +4,43 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-20 — LLM Model Split (DONE)
+
+### What We Built
+- **`agents/llm_client.py`** — Added `call_claude_haiku()` (model: `claude-haiku-4-5-20251001`). Updated `_log_cost()` to accept a `model` param so each function passes its own model ID to the ledger. `call_claude_stream` (CEO browser chat) left on Sonnet, untouched.
+- **`agents/treasury_mvp.py`** — Replaced global `COST_PER_INPUT_TOKEN`/`COST_PER_OUTPUT_TOKEN` constants with `_MODEL_RATES` dict keyed by model ID. `append_cost_entry()` now looks up per-model rates: Haiku at $0.80/$4.00 per M, Sonnet at $3.00/$15.00 per M.
+- **7 agents switched to Haiku** (free-text tasks): `ceo_room_mvp.py`, `factory_room_mvp.py`, `analytics_room_mvp.py`, `cs_room_mvp.py`, `media_bay_mvp.py`, `war_room_mvp.py`, `shop_health_room_mvp.py`
+- **5 agents kept on Sonnet** (structured JSON): `researcher_room_mvp.py`, `approval_room_mvp.py`, `pricing_room_mvp.py`, `radar_bay_mvp.py`, `armory_mvp.py`
+- **`agents/researcher_room_mvp.py`** — Added 2000-char cap on market_data before prompt injection to prevent Ollama overflow on large Etsy responses.
+
+### Bugs Fixed
+None — clean implementation.
+
+### Verification
+- Both models called directly in test; ledger shows:
+  - `claude-sonnet-4-6` entry: `cost_usd: 0.000222` (14 in + 12 out @ $3/$15 per M) ✓
+  - `claude-haiku-4-5-20251001` entry: `cost_usd: 4.3e-05` (14 in + 8 out @ $0.80/$4 per M) ✓
+- Full research run via API also confirmed working (used Ollama, no Claude charges needed)
+- Server restarted cleanly with no import errors
+
+### What's Next
+**P2 — Dynamic Etsy search keywords** (`market_intel.py`):
+- Currently uses 16 hardcoded keyword searches sampled to 5 per run
+- Replace with LLM-generated search terms each run based on current season, trending moments, and top Etsy category trends
+- Goal: make Researcher reactive to what's hot now vs always searching same broad terms
+- File: `agents/market_intel.py` → add `_generate_search_keywords(llm_fn)` function that uses Haiku (it's free-text, simple) to produce 6–8 fresh search terms; swap the hardcoded list for the generated list
+
+**Also still on P2:**
+- Etsy order/revenue OAuth 2.0 flow — needs real orders first
+- Ideogram + Flux image generation fallbacks
+
+### Gotchas for Next Session
+- `designer_room_mvp.py` uses `call_claude` — it wasn't in the Haiku or Sonnet lists in the original HANDOFF. Left on Sonnet since it generates creative image prompts (not strictly JSON but benefits from stronger model). Could revisit.
+- `call_claude` is still imported in `ceo_room_mvp.py`'s import line? No — cleaned up. CEO now imports only `call_claude_haiku` and the streaming variants.
+- Treasury `_MODEL_RATES` falls back to Sonnet rates for any unrecognized model string — safe default.
+
+---
+
 ## Session: 2026-05-20 — LLM Selection Per Room (NEXT SESSION — START HERE)
 
 ### Goal
