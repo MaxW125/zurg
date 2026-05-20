@@ -5,7 +5,7 @@ import asyncio
 import httpx
 from datetime import datetime, timezone
 from agents.llm_client import call_local, call_claude
-from agents.market_intel import gather_trends
+from agents.market_intel import gather_trends, get_seasonal_context
 from agents.product_catalog import PRODUCT_TYPES
 from agents.brain import load_system_prompt
 
@@ -148,28 +148,37 @@ async def run_researcher(input: dict) -> dict:
     """
     direction = input.get("direction", "").strip()
 
-    # Gather live market data (free, no API keys)
-    print("[researcher] Fetching live market data...")
-    market_data = await gather_trends()
+    # Gather live market data and seasonal context in parallel
+    print("[researcher] Fetching market data and seasonal context...")
+    market_data, seasonal = await asyncio.gather(
+        gather_trends(),
+        get_seasonal_context(),
+    )
+
     if market_data:
         MAX_MARKET_DATA_CHARS = 2000
         if len(market_data) > MAX_MARKET_DATA_CHARS:
             market_data = market_data[:MAX_MARKET_DATA_CHARS] + "\n...[truncated]"
-        print(f"[researcher] Market data ({len(market_data)} chars):\n{market_data}\n---")
+        print(f"[researcher] Market data ({len(market_data)} chars)")
     else:
-        print("[researcher] No market data available — using LLM knowledge only")
+        print("[researcher] No market data — using LLM knowledge only")
 
-    market_section = f"\n\nHere is current live market data to inform your decision:\n{market_data}\n" if market_data else ""
+    if seasonal:
+        print(f"[researcher] Seasonal context: {seasonal[:120]}")
+
+    market_section   = f"\n\nLIVE ETSY DATA (what's actually getting favourited right now):\n{market_data}\n" if market_data else ""
+    seasonal_section = f"\n\nUPCOMING EVENTS (consider for gifting angle):\n{seasonal}\n" if seasonal else ""
 
     if direction:
-        prompt = f"""Find a profitable print-on-demand niche based on this direction: "{direction}"{market_section}
-Pick a specific, passionate audience within that space. Choose the product type that fits best — consider mugs for gift/humor niches, tote bags for lifestyle niches, posters for art/decor niches, and apparel for community/identity niches.
+        prompt = f"""Find a profitable print-on-demand niche based on this direction: "{direction}"{market_section}{seasonal_section}
+Pick a specific, passionate audience within that space. Choose the product type that fits best — consider mugs for gift/humor niches, tote bags for lifestyle niches, posters for art/decor niches, apparel for community/identity niches.
+If upcoming events are listed, consider whether a seasonal angle strengthens the niche.
 Return the JSON brief."""
     else:
-        prompt = f"""Find a profitable print-on-demand niche. Choose something with a passionate, underserved audience.{market_section}
-Avoid generic niches like "dog lovers" — go specific, e.g. "Border Collie agility training enthusiasts" or "ICU Nurse dark humor mugs".
-If market data is provided above, prioritise niches and product types that align with trending items.
-Consider the full product range: mugs, tote bags, posters, phone cases, aprons, and throw pillows often sell as well as shirts on Etsy.
+        prompt = f"""Find a profitable print-on-demand niche. Use the live Etsy data below to identify what's actually resonating with buyers right now — look for recurring tags and high-favorites listings as your signal.{market_section}{seasonal_section}
+Go specific: e.g. "Border Collie agility training enthusiasts" or "ICU Nurse dark humor mugs". Avoid generic niches.
+If upcoming events are listed, a seasonal angle can boost sales — but only use it if it genuinely fits the niche.
+Consider the full product range: mugs, tote bags, posters, phone cases, aprons, and throw pillows often sell as well as shirts.
 
 Return the JSON brief."""
 

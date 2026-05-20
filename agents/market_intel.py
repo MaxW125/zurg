@@ -23,32 +23,30 @@ DDG_QUERIES = [
     "most profitable print on demand shirt themes passionate communities",
 ]
 
-# Keyword sets covering a range of product types and niche categories.
-# Each tuple is (search_keyword, category_label).
+# Two search terms per product type — broad enough to surface niches organically,
+# anchored to products we can actually make via Printify.
 _ETSY_MARKET_QUERIES = [
-    # Apparel
-    ("funny animal shirt",            "Apparel — Animals & Pets"),
-    ("hobby enthusiast tee",          "Apparel — Hobby Niches"),
-    ("funny profession shirt",        "Apparel — Jobs & Careers"),
-    ("outdoor adventure sweatshirt",  "Apparel — Outdoor/Nature"),
-    ("niche graphic tee gift",        "Apparel — Gift Niches"),
-    # Mugs
-    ("funny coffee mug gift",         "Mugs — Humor & Gifts"),
-    ("animal lover mug",              "Mugs — Animals & Pets"),
-    ("hobby niche mug",               "Mugs — Hobby Niches"),
-    # Tote Bags
-    ("funny tote bag gift",           "Tote Bags — Humor & Gifts"),
-    ("nature lover canvas tote",      "Tote Bags — Nature/Lifestyle"),
-    # Posters & Prints
-    ("motivational art print poster", "Posters — Motivational"),
-    ("animal illustration print",     "Posters — Animals & Nature"),
-    # Phone Cases
-    ("funny phone case niche",        "Phone Cases — Humor & Niche"),
-    ("cute animal phone case",        "Phone Cases — Animals & Pets"),
-    # Aprons
-    ("funny apron gift",              "Aprons — Humor & Gifts"),
-    # Pillows
-    ("decorative throw pillow niche", "Pillows — Home Decor"),
+    # Apparel (T-Shirt, Hoodie, Long Sleeve, Sweatshirt)
+    ("funny graphic tee gift",          "Apparel"),
+    ("hobby niche sweatshirt gift",     "Apparel"),
+    # Ceramic Mug
+    ("funny coffee mug gift",           "Ceramic Mug"),
+    ("novelty mug gift idea",           "Ceramic Mug"),
+    # Tote Bag
+    ("canvas tote bag gift",            "Tote Bag"),
+    ("book lover tote bag",             "Tote Bag"),
+    # Poster
+    ("wall art print home decor",       "Poster"),
+    ("motivational poster gift",        "Poster"),
+    # Tough Phone Case
+    ("funny phone case gift",           "Tough Phone Case"),
+    ("cute niche phone case",           "Tough Phone Case"),
+    # Cotton Apron
+    ("funny apron gift kitchen",        "Cotton Apron"),
+    ("novelty cooking apron gift",      "Cotton Apron"),
+    # Throw Pillow
+    ("funny throw pillow home decor",   "Throw Pillow"),
+    ("decorative pillow gift niche",    "Throw Pillow"),
 ]
 
 
@@ -137,22 +135,24 @@ def _fetch_everbee() -> str:
 # ── Etsy API ──────────────────────────────────────────────────
 
 def _fetch_etsy_market() -> str:
-    """Search public Etsy listings for trending niches using the Etsy API.
-    Samples 5 random query categories per run to keep response time fast."""
+    """Search public Etsy listings anchored to our 10 product types.
+    Samples 6 queries, collects all listings, aggregates by favorites,
+    and returns a synthesised summary of trending tags and top listings."""
     api_key = os.getenv("ETSY_API_KEY", "")
     secret  = os.getenv("ETSY_SHARED_SECRET", "")
     if not api_key or not secret:
         return ""
 
     import random
-    queries = random.sample(_ETSY_MARKET_QUERIES, min(5, len(_ETSY_MARKET_QUERIES)))
+    from collections import Counter
+    queries = random.sample(_ETSY_MARKET_QUERIES, min(6, len(_ETSY_MARKET_QUERIES)))
 
-    headers = {"x-api-key": f"{api_key}:{secret}"}
-    lines   = ["=== Etsy Market Intelligence (Live Listing Data) ==="]
+    headers  = {"x-api-key": f"{api_key}:{secret}"}
+    all_listings: list[dict] = []
 
     try:
         with httpx.Client(timeout=20) as client:
-            for keyword, category in queries:
+            for keyword, product_type in queries:
                 r = client.get(
                     f"{ETSY_BASE}/application/listings/active",
                     headers=headers,
@@ -160,36 +160,53 @@ def _fetch_etsy_market() -> str:
                         "keywords":   keyword,
                         "sort_on":    "score",
                         "sort_order": "desc",
-                        "limit":      10,
+                        "limit":      15,
                     },
                 )
                 if r.status_code != 200:
                     print(f"[market_intel] Etsy search '{keyword}' status {r.status_code}")
                     continue
-                results = r.json().get("results", [])
-                if not results:
-                    continue
-                lines.append(f"\n-- {category} (search: \"{keyword}\") --")
-                for item in results[:8]:
-                    title = (item.get("title") or "")[:80]
-                    views = item.get("views", 0)
-                    fav   = item.get("num_favorers", 0)
-                    tags  = (item.get("tags") or [])[:6]
-                    price = item.get("price") or {}
-                    amt   = price.get("amount", 0)
-                    div   = price.get("divisor", 100) or 100
-                    price_val = amt / div
-                    tag_str = ", ".join(tags)
-                    if title:
-                        lines.append(
-                            f"- \"{title}\" | views:{views}, fav:{fav}, ${price_val:.2f}"
-                            + (f" | tags: {tag_str}" if tag_str else "")
-                        )
+                for item in r.json().get("results", []):
+                    item["_product_type"] = product_type
+                    all_listings.append(item)
     except Exception as e:
         print(f"[market_intel] Etsy market fetch failed: {e}")
         return ""
 
-    return "\n".join(lines) if len(lines) > 1 else ""
+    if not all_listings:
+        return ""
+
+    # Sort all collected listings by favorites descending
+    all_listings.sort(key=lambda x: x.get("num_favorers", 0), reverse=True)
+    top = all_listings[:30]
+
+    # Count tag frequency across top listings
+    tag_counter: Counter = Counter()
+    for item in top:
+        for tag in (item.get("tags") or []):
+            tag_counter[tag.lower()] += 1
+
+    top_tags = tag_counter.most_common(15)
+    tag_summary = ", ".join(f"{tag} ({n})" for tag, n in top_tags if n > 1)
+
+    # Top 5 listing examples by favorites
+    example_lines = []
+    for item in all_listings[:5]:
+        title    = (item.get("title") or "")[:70]
+        fav      = item.get("num_favorers", 0)
+        pt       = item.get("_product_type", "")
+        tags     = (item.get("tags") or [])[:4]
+        tag_str  = ", ".join(tags)
+        example_lines.append(f'- "{title}" — {fav} fav | {pt} | tags: {tag_str}')
+
+    lines = [
+        f"=== Etsy Market Intelligence ({len(all_listings)} listings across {len(queries)} product searches) ===",
+        f"\nTop recurring tags (by frequency in high-favorites listings):",
+        tag_summary or "— no repeated tags found",
+        f"\nTop listings by favorites:",
+    ] + example_lines
+
+    return "\n".join(lines)
 
 
 # ── DuckDuckGo fallback ────────────────────────────────────────
@@ -209,6 +226,36 @@ def _fetch_ddg() -> str:
         return "\n".join(lines) if len(lines) > 1 else ""
     except Exception as e:
         print(f"[market_intel] DDG search failed: {e}")
+        return ""
+
+
+# ── Seasonal context ───────────────────────────────────────────
+
+async def get_seasonal_context() -> str:
+    """Ask Haiku what holidays or notable events are coming in the next 4 weeks.
+    Returns a short plain-text summary, or "" if nothing notable or the call fails."""
+    today = datetime.now().strftime("%B %d, %Y")
+    prompt = f"""Today is {today}.
+
+List any holidays, cultural events, or gifting moments happening NOW or within the NEXT 4 WEEKS that are relevant to print-on-demand or gift-buying (e.g. Mother's Day, graduation season, Pride Month, Halloween, Valentine's Day).
+
+Rules:
+- Only include events within 4 weeks of today. If an event is more than 4 weeks away, do not mention it.
+- If there are genuinely no notable events in the next 4 weeks, say exactly: "No major gifting events in the next 4 weeks."
+- Do not guess or invent events. Only include ones you are certain about.
+- Be concise — one line per event, include how far away it is.
+
+Output as a plain bulleted list."""
+
+    try:
+        from agents.llm_client import call_claude_haiku
+        result = await call_claude_haiku(prompt, room="market_intel")
+        # Discard if it looks like a hallucination or is suspiciously long
+        if len(result) > 600:
+            result = result[:600]
+        return result.strip()
+    except Exception as e:
+        print(f"[market_intel] Seasonal context failed: {e}")
         return ""
 
 
