@@ -156,9 +156,6 @@ async def run_researcher(input: dict) -> dict:
     )
 
     if market_data:
-        MAX_MARKET_DATA_CHARS = 2000
-        if len(market_data) > MAX_MARKET_DATA_CHARS:
-            market_data = market_data[:MAX_MARKET_DATA_CHARS] + "\n...[truncated]"
         print(f"[researcher] Market data ({len(market_data)} chars)")
     else:
         print("[researcher] No market data — using LLM knowledge only")
