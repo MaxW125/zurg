@@ -43,7 +43,8 @@
 - [x] **Etsy API — monitoring** — Monitoring Room now checks Etsy API key health alongside all other systems.
 
 **P2 — Makes the system production-ready**
-- [ ] LLM audit — right model per agent; Haiku for simple tasks (intent classification, acks), Sonnet for complex (research, briefings). Crosses off the LLM split Final Vision item.
+- [ ] LLM audit — right model per agent; Haiku for simple tasks (intent classification, acks), Sonnet for complex (research, briefings). Crosses off the LLM split Final Vision item. See HANDOFF for full breakdown of which agents must stay on Sonnet vs safe for Haiku.
+- [ ] **Researcher Room — LLM + data size overhaul** — the Researcher is the most context-heavy agent: it receives up to ~3000 chars of Etsy market data + the research prompt, then must return strict JSON. Three things to fix together: (1) switch to Sonnet so JSON output is reliable, (2) truncate/summarise Etsy market data before injecting into prompt so it never overflows, (3) consider streaming the brief back so long runs don't time out in the browser. The `_parse_brief()` key-alias normalisation is already in place as a safety net.
 - [ ] Etsy order/revenue data — requires OAuth 2.0 flow (separate from API key). Would unlock Etsy sales in Analytics Room and CS Room. Build when store has real orders.
 - [ ] Ideogram + Flux image fallbacks — Imagen fails silently right now; fallbacks mean designs never get stuck
 - [ ] Gelato fulfilment fallback — Printify backup
