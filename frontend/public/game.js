@@ -377,14 +377,20 @@ function renderFactory(body) {
   const hasProduct = state.product?.product_url;
 
   if (hasProduct) {
+    const etsyHtml = state.product.etsy_product_url
+      ? `<div class="product-link" style="margin-top:6px">
+           ETSY: <a href="${escHtml(state.product.etsy_product_url)}" target="_blank">${escHtml(state.product.etsy_product_url)}</a>
+         </div>`
+      : `<div class="brief-field" style="margin-top:6px;color:#6b7280">ETSY: <span>not published</span></div>`;
     body.innerHTML = `
       <div class="room-panel">
         <div class="panel-section">
-          <div class="panel-section-title">▶ PUBLISHED TO SHOPIFY</div>
+          <div class="panel-section-title">▶ PUBLISHED</div>
           <div class="brief-field">TITLE: <span>${escHtml(state.product.title)}</span></div>
           <div class="product-link">
-            ADMIN: <a href="${escHtml(state.product.product_url)}" target="_blank">${escHtml(state.product.product_url)}</a>
+            SHOPIFY: <a href="${escHtml(state.product.product_url)}" target="_blank">${escHtml(state.product.product_url)}</a>
           </div>
+          ${etsyHtml}
           <br>
           <button class="btn btn-yellow" onclick="resetPipeline()">▶ START NEW PIPELINE</button>
         </div>

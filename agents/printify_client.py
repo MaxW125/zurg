@@ -98,6 +98,7 @@ async def create_product(
     print_provider_id: int = DEFAULT_PRINT_PROVIDER,
     tags: list[str] | None = None,
     preferred_color: str = "black",
+    shop_id: str | None = None,
 ) -> dict:
     """
     Create a product on Printify with the uploaded design image.
@@ -171,9 +172,10 @@ async def create_product(
         "tags": tags or [],
     }
 
+    sid = shop_id or _shop_id()
     async with httpx.AsyncClient(timeout=60) as client:
         r = await client.post(
-            f"{PRINTIFY_BASE}/shops/{_shop_id()}/products.json",
+            f"{PRINTIFY_BASE}/shops/{sid}/products.json",
             json=payload,
             headers=_headers(),
         )
@@ -187,6 +189,7 @@ async def get_mockup_urls(
     printify_product_id: str,
     max_wait: int = 45,
     preferred_variant_ids: list[int] | None = None,
+    shop_id: str | None = None,
 ) -> list[str]:
     """
     Poll a Printify product until mockup images are generated, then return their URLs.
@@ -199,11 +202,12 @@ async def get_mockup_urls(
     """
     deadline = asyncio.get_event_loop().time() + max_wait
     preferred_set = set(preferred_variant_ids or [])
+    sid = shop_id or _shop_id()
 
     async with httpx.AsyncClient(timeout=30) as client:
         while asyncio.get_event_loop().time() < deadline:
             r = await client.get(
-                f"{PRINTIFY_BASE}/shops/{_shop_id()}/products/{printify_product_id}.json",
+                f"{PRINTIFY_BASE}/shops/{sid}/products/{printify_product_id}.json",
                 headers=_headers(),
             )
             r.raise_for_status()
@@ -236,6 +240,41 @@ async def download_mockup(url: str, save_path: str) -> None:
         r.raise_for_status()
         with open(save_path, "wb") as f:
             f.write(r.content)
+
+
+async def publish_product(printify_product_id: str, shop_id: str | None = None) -> dict:
+    """
+    Publish a Printify product to its connected sales channel (Shopify or Etsy).
+    Works for any Printify shop — pass shop_id to target a specific channel.
+    """
+    payload = {
+        "title":       True,
+        "description": True,
+        "images":      True,
+        "variants":    True,
+        "tags":        True,
+    }
+    sid = shop_id or _shop_id()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{PRINTIFY_BASE}/shops/{sid}/products/{printify_product_id}/publish.json",
+            json=payload,
+            headers=_headers(),
+        )
+        r.raise_for_status()
+        return r.json()
+
+
+async def get_product(printify_product_id: str, shop_id: str | None = None) -> dict:
+    """Fetch a Printify product — used after publishing to retrieve the external listing URL."""
+    sid = shop_id or _shop_id()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.get(
+            f"{PRINTIFY_BASE}/shops/{sid}/products/{printify_product_id}.json",
+            headers=_headers(),
+        )
+        r.raise_for_status()
+        return r.json()
 
 
 async def publish_to_shopify(printify_product_id: str) -> dict:

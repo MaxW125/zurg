@@ -37,7 +37,7 @@
 
 **P1 — Unblocks everything**
 - [x] Migrate all services to zurg-account@example.com — Anthropic ✅, Google ✅, Printify ✅, Publer (deferred — needs Business plan), OpenClaw ✅ (already on prod)
-- [ ] **Etsy sales channel** — Etsy Marketplace API approved; connect Etsy store to Printify (same as Shopify), add `PRINTIFY_ETSY_SHOP_ID` to `.env`, update Factory Room to publish to both Printify shops on every approval. No separate Etsy API needed — Printify handles fulfilment for both channels.
+- [x] **Etsy sales channel** — Etsy Marketplace API approved; connect Etsy store to Printify (same as Shopify), add `PRINTIFY_ETSY_SHOP_ID` to `.env`, update Factory Room to publish to both Printify shops on every approval. No separate Etsy API needed — Printify handles fulfilment for both channels.
 
 **P2 — Makes the system production-ready**
 - [ ] LLM audit — right model per agent; Haiku for simple tasks (intent classification, acks), Sonnet for complex (research, briefings). Crosses off the LLM split Final Vision item.

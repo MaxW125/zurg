@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 from datetime import datetime, timezone, timedelta
 import httpx
 from agents.brain import load_system_prompt
@@ -7,10 +8,12 @@ from agents.brain import load_system_prompt
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 MONITORING_DIR = os.path.join(BRAIN_PATH, "rooms", "monitoring", "reports")
 
-SHOPIFY_ACCESS_TOKEN = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
-SHOPIFY_STORE_URL = os.getenv("SHOPIFY_STORE_URL", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+SHOPIFY_ACCESS_TOKEN    = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
+SHOPIFY_STORE_URL       = os.getenv("SHOPIFY_STORE_URL", "")
+ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY", "")
+OLLAMA_HOST             = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+PRINTIFY_API_TOKEN      = os.getenv("PRINTIFY_API_TOKEN", "")
+PRINTIFY_ETSY_SHOP_ID   = os.getenv("PRINTIFY_ETSY_SHOP_ID", "")
 
 SHOPIFY_API_VERSION = "2025-01"
 STALE_HOURS = 24
@@ -63,6 +66,28 @@ async def _check_anthropic() -> dict:
         if r.status_code == 401:
             return {"status": "red", "detail": "401 — API key invalid or revoked"}
         return {"status": "yellow", "detail": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"status": "red", "detail": f"Connection failed: {str(e)[:80]}"}
+
+
+async def _check_printify_etsy() -> dict:
+    if not PRINTIFY_API_TOKEN:
+        return {"status": "yellow", "detail": "PRINTIFY_API_TOKEN not set"}
+    if not PRINTIFY_ETSY_SHOP_ID:
+        return {"status": "yellow", "detail": "PRINTIFY_ETSY_SHOP_ID not set — Etsy channel not configured"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://api.printify.com/v1/shops.json",
+                headers={"Authorization": f"Bearer {PRINTIFY_API_TOKEN}"},
+            )
+        if r.status_code != 200:
+            return {"status": "yellow", "detail": f"Printify API HTTP {r.status_code}"}
+        shops = r.json()
+        etsy_shop = next((s for s in shops if str(s.get("id")) == PRINTIFY_ETSY_SHOP_ID), None)
+        if not etsy_shop:
+            return {"status": "red", "detail": f"Etsy shop {PRINTIFY_ETSY_SHOP_ID} not found in Printify — reconnect in dashboard"}
+        return {"status": "green", "detail": f"Connected — {etsy_shop.get('title', 'Etsy store')}"}
     except Exception as e:
         return {"status": "red", "detail": f"Connection failed: {str(e)[:80]}"}
 
@@ -172,15 +197,19 @@ async def get_latest_report() -> dict | None:
 
 
 async def run_monitoring() -> dict:
-    shopify = await _check_shopify()
-    anthropic = await _check_anthropic()
-    ollama = await _check_ollama()
+    shopify, anthropic, ollama, etsy = await asyncio.gather(
+        _check_shopify(),
+        _check_anthropic(),
+        _check_ollama(),
+        _check_printify_etsy(),
+    )
 
     systems = [
-        {"name": "Server",        "key": "server",    "status": "green",        "detail": "Responding — you're reading this"},
-        {"name": "Shopify API",   "key": "shopify",   **shopify},
-        {"name": "Anthropic API", "key": "anthropic", **anthropic},
-        {"name": "Ollama",        "key": "ollama",    **ollama},
+        {"name": "Server",           "key": "server",    "status": "green", "detail": "Responding — you're reading this"},
+        {"name": "Shopify API",      "key": "shopify",   **shopify},
+        {"name": "Printify Etsy",    "key": "etsy",      **etsy},
+        {"name": "Anthropic API",    "key": "anthropic", **anthropic},
+        {"name": "Ollama",           "key": "ollama",    **ollama},
     ]
 
     for room_key, room_name in _BUILT_ROOMS:

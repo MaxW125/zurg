@@ -4,6 +4,45 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-20 — Etsy Dual-Channel Publishing
+
+### What We Did
+- Wired Etsy as a second Factory Room sales channel alongside Shopify
+- Etsy store was already connected in Printify dashboard (shop ID: <PRINTIFY_ETSY_SHOP_ID>, "My Etsy Store") — no manual setup needed
+- Added `PRINTIFY_ETSY_SHOP_ID=<PRINTIFY_ETSY_SHOP_ID>` to `.env`
+- Updated `agents/printify_client.py` — added `shop_id` param to `create_product()` and `get_mockup_urls()`; added `publish_product(product_id, shop_id)` and `get_product(product_id, shop_id)` helpers
+- Updated `agents/factory_room_mvp.py` — image uploaded once to Printify (shared asset); Shopify and Etsy flows run in parallel via `asyncio.gather()`; one failing does not block the other; result includes `etsy_product_url` and `etsy_printify_product_id`
+- Updated `frontend/public/game.js` — Factory Room panel shows both Shopify admin URL and Etsy listing URL; falls back to "not published" label if Etsy failed
+- Updated `agents/monitoring_room_mvp.py` — added "Printify Etsy" health check; calls `GET /v1/shops.json`, verifies `PRINTIFY_ETSY_SHOP_ID` is in the shop list; all checks now run concurrently via `asyncio.gather()`
+- Verified end-to-end: `POST /api/rooms/factory/run` returned both `product_url` (Shopify) and `etsy_product_url`; test listings deleted from all three places (Shopify, Printify Shopify shop, Printify Etsy shop)
+- Monitoring Room now shows 5 API checks: Server, Shopify API, Printify Etsy, Anthropic API, Ollama — all green
+
+### Bugs Hit
+- None. Clean build.
+
+### Current State
+- Every `run_factory()` call now publishes to both Shopify (as draft) and Etsy (via Printify publish) automatically
+- Etsy `etsy_product_url` is the `external.handle` from Printify after publishing — if Etsy's handle isn't set yet (can take a few seconds), it falls back to `https://www.etsy.com/shop/KrakenAndCo`
+- `mockup_used: false` in the test run — this is an existing behaviour (mockup polling may time out on some runs); the mockup fallback to flat design is working correctly
+
+### What's Next
+**P2 — LLM audit** is the next natural step:
+- Audit each agent and assign the right model: Haiku for simple tasks (intent classification, acks, CS replies), Sonnet for complex (research briefs, War Room synthesis, approval analysis)
+- File to edit: `agents/llm_client.py` — add `call_claude_haiku()` function, then update each agent
+
+**Or: Imagen cost logging in Treasury:**
+- `agents/designer_room_mvp.py` — call `append_cost_entry("design", "imagen-4-fast", 0, 0)` with fixed cost ~$0.02 after each successful generation
+- `agents/treasury_mvp.py` — add Imagen as a separate cost category
+
+### Gotchas
+- Etsy shop ID is `<PRINTIFY_ETSY_SHOP_ID>` — already in `.env` as `PRINTIFY_ETSY_SHOP_ID`
+- Image upload to Printify is shared (one `upload_image()` call, both shops reuse the same `image_id`) — this is correct, Printify's media library is account-wide
+- Etsy publish uses `publish_product(pid, shop_id=etsy_shop_id)` from `printify_client.py` — this is the generic version of the old `publish_to_shopify()` (which still exists for backward compatibility)
+- The Etsy flow only runs if both `PRINTIFY_API_TOKEN` and `PRINTIFY_ETSY_SHOP_ID` are set — if either is missing, `_etsy_flow()` returns `None` silently
+- `etsy_product_url` in the factory result may be a shop URL fallback (not a specific listing URL) if Printify's `external.handle` is empty at fetch time — this is cosmetic, the listing is still live on Etsy
+
+---
+
 ## Session: 2026-05-19 — Service Migration + Pipeline Fixes
 
 ### What We Did
