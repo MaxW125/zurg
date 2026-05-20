@@ -187,7 +187,7 @@ async def create_product(
 
 async def get_mockup_urls(
     printify_product_id: str,
-    max_wait: int = 45,
+    max_wait: int = 120,
     preferred_variant_ids: list[int] | None = None,
     shop_id: str | None = None,
 ) -> list[str]:

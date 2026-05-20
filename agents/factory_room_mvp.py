@@ -140,6 +140,9 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
                     await download_mockup(mockup_urls[0], mockup_disk)
                     result["listing_image_path"] = f"/assets/generated/{mockup_name}"
                     result["mockup_used"]        = True
+                    print(f"[factory] Mockup downloaded: {mockup_name}")
+                else:
+                    print(f"[factory] Mockup timed out — using flat design for {product_type}")
                 result["printify_product_id"] = pid
             except Exception as e:
                 import traceback
@@ -175,9 +178,14 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
         return result
 
     async def _etsy_flow() -> dict | None:
-        if not image_id or not etsy_shop_id:
+        if not image_id:
+            print("[factory] Etsy skipped — no image_id")
+            return None
+        if not etsy_shop_id:
+            print("[factory] Etsy skipped — PRINTIFY_ETSY_SHOP_ID not set")
             return None
         try:
+            print(f"[factory] Creating Etsy product in Printify shop {etsy_shop_id}...")
             printify_product = await create_product(
                 title=title,
                 description=description,
@@ -189,11 +197,13 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
                 shop_id=etsy_shop_id,
             )
             pid = printify_product["id"]
+            print(f"[factory] Etsy Printify product created: {pid} — publishing...")
             await publish_product(pid, shop_id=etsy_shop_id)
-            # Fetch the published product to extract the Etsy listing URL
+            print(f"[factory] Etsy publish call sent for {pid} — fetching listing URL...")
             published = await get_product(pid, shop_id=etsy_shop_id)
             external  = published.get("external") or {}
-            etsy_url  = external.get("handle") or f"https://www.etsy.com/shop/KrakenAndCo"
+            etsy_url  = external.get("handle") or "https://www.etsy.com/shop/KrakenAndCoDesigns"
+            print(f"[factory] Etsy listing URL: {etsy_url}")
             return {"etsy_printify_product_id": pid, "etsy_product_url": etsy_url}
         except Exception as e:
             import traceback
