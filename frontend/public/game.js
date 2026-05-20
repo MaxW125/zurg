@@ -1214,11 +1214,49 @@ function _renderShopHealthBody(body) {
           ✓ ${escHtml(p.title)} &nbsp;|&nbsp; ${p.total_sales} sales &nbsp;|&nbsp; ${p.tag_count} tags
         </div>`).join('');
 
+  // Etsy listings section
+  const etsyListings = r.etsy_listings || [];
+  const etsyCritical = etsyListings.filter(l => l.severity === 'critical');
+  const etsyWarning  = etsyListings.filter(l => l.severity === 'warning');
+  const etsyOk       = etsyListings.filter(l => l.severity === 'ok');
+
+  function etsyCard(l) {
+    return `
+      <div style="padding:10px 0;border-bottom:1px solid #1a0a2e">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px">
+          <div style="font-size:6px;color:var(--text);flex:1">
+            <a href="${escHtml(l.url)}" target="_blank" style="color:var(--text);text-decoration:none">${escHtml(l.title)}</a>
+          </div>
+          ${severityBadge(l.severity)}
+        </div>
+        <div style="font-size:6px;color:var(--text-dim);margin-bottom:5px">
+          ${l.views} VIEWS &nbsp;|&nbsp; ${l.favorites} FAV &nbsp;|&nbsp;
+          ${l.days_live}D LIVE &nbsp;|&nbsp; ${l.tag_count}/13 TAGS
+        </div>
+        <div style="margin-bottom:5px">${issueBadges(l.issues)}</div>
+        ${l.recommendation ? `<div style="font-size:6px;line-height:1.8;color:var(--text);background:#0a001a;border:1px solid #2a0a3e;padding:8px">${escHtml(l.recommendation)}</div>` : ''}
+      </div>`;
+  }
+
+  const etsySection = etsyListings.length === 0
+    ? ''
+    : `
+      <div class="panel-section" style="border-color:#c0711a">
+        <div class="panel-section-title" style="color:#ff9944">▶ ETSY LISTINGS (${etsyListings.length} scanned, ${r.etsy_flagged || 0} flagged)</div>
+        ${etsyCritical.map(etsyCard).join('') || ''}
+        ${etsyWarning.map(etsyCard).join('') || ''}
+        ${etsyOk.length ? etsyOk.map(l => `
+          <div style="padding:6px 0;border-bottom:1px solid #0a1a0a;font-size:6px;color:var(--text-dim)">
+            ✓ <a href="${escHtml(l.url)}" target="_blank" style="color:var(--text-dim)">${escHtml(l.title)}</a>
+            &nbsp;|&nbsp; ${l.views} views &nbsp;|&nbsp; ${l.tag_count}/13 tags
+          </div>`).join('') : ''}
+      </div>`;
+
   body.innerHTML = `
     <div class="room-panel">
       <div class="panel-section" style="border-color:#c0392b">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <div class="panel-section-title" style="margin-bottom:0;color:#ff4444">▶ CRITICAL ISSUES</div>
+          <div class="panel-section-title" style="margin-bottom:0;color:#ff4444">▶ SHOPIFY — CRITICAL ISSUES</div>
           <button onclick="runShopHealth()" id="shophealth-btn"
                   style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;background:#1a0000;color:#ff4444;border:2px solid #c0392b">
             ▶ REFRESH
@@ -1226,21 +1264,21 @@ function _renderShopHealthBody(body) {
         </div>
         <div style="font-size:6px;color:var(--text-dim);margin-bottom:8px">
           LAST RUN: ${escHtml(r.run_date || '—')} &nbsp;|&nbsp;
-          ${r.products_scanned || 0} LISTINGS SCANNED &nbsp;|&nbsp;
-          ${r.flagged_count || 0} FLAGGED &nbsp;|&nbsp;
+          SHOPIFY: ${r.products_scanned || 0} scanned, ${r.flagged_count || 0} flagged &nbsp;|&nbsp;
           MODEL: ${escHtml(r.model_used || '—')}
         </div>
         ${criticalHtml}
         <div id="shophealth-run-status"></div>
       </div>
       <div class="panel-section" style="border-color:#aa7700">
-        <div class="panel-section-title" style="color:#ffaa00">▶ SEO WARNINGS</div>
+        <div class="panel-section-title" style="color:#ffaa00">▶ SHOPIFY — SEO WARNINGS</div>
         ${warningHtml}
       </div>
       <div class="panel-section">
-        <div class="panel-section-title" style="color:var(--green)">▶ HEALTHY LISTINGS</div>
+        <div class="panel-section-title" style="color:var(--green)">▶ SHOPIFY — HEALTHY</div>
         ${okHtml}
       </div>
+      ${etsySection}
     </div>`;
 }
 
@@ -1267,7 +1305,8 @@ async function runShopHealth() {
     } else {
       state.shopHealthReport = data;
       const flagged = data.flagged_count || 0;
-      toast(`SHOP HEALTH DONE — ${flagged} LISTING${flagged !== 1 ? 'S' : ''} FLAGGED`);
+      const etsyFlagged = data.etsy_flagged || 0;
+      toast(`SHOP HEALTH DONE — SHOPIFY: ${flagged} FLAGGED, ETSY: ${etsyFlagged} FLAGGED`);
       _renderShopHealthBody(document.getElementById('panel-body'));
     }
   } catch (e) {

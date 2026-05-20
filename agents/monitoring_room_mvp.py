@@ -14,6 +14,9 @@ ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY", "")
 OLLAMA_HOST             = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 PRINTIFY_API_TOKEN      = os.getenv("PRINTIFY_API_TOKEN", "")
 PRINTIFY_ETSY_SHOP_ID   = os.getenv("PRINTIFY_ETSY_SHOP_ID", "")
+ETSY_API_KEY            = os.getenv("ETSY_API_KEY", "")
+ETSY_SHARED_SECRET      = os.getenv("ETSY_SHARED_SECRET", "")
+ETSY_SHOP_NAME          = os.getenv("ETSY_SHOP_NAME", "")
 
 SHOPIFY_API_VERSION = "2025-01"
 STALE_HOURS = 24
@@ -65,6 +68,29 @@ async def _check_anthropic() -> dict:
             return {"status": "green", "detail": "API key valid"}
         if r.status_code == 401:
             return {"status": "red", "detail": "401 — API key invalid or revoked"}
+        return {"status": "yellow", "detail": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"status": "red", "detail": f"Connection failed: {str(e)[:80]}"}
+
+
+async def _check_etsy_api() -> dict:
+    if not ETSY_API_KEY or not ETSY_SHARED_SECRET:
+        return {"status": "yellow", "detail": "ETSY_API_KEY / ETSY_SHARED_SECRET not set"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"https://openapi.etsy.com/v3/application/shops?shop_name={ETSY_SHOP_NAME or 'KrakenAndCoDesigns'}",
+                headers={"x-api-key": f"{ETSY_API_KEY}:{ETSY_SHARED_SECRET}"},
+            )
+        if r.status_code == 200:
+            count = r.json().get("count", 0)
+            if count:
+                shop = r.json()["results"][0]
+                listings = shop.get("listing_active_count", "?")
+                return {"status": "green", "detail": f"Key valid — {shop['shop_name']}, {listings} active listings"}
+            return {"status": "yellow", "detail": "Key valid but shop not found"}
+        if r.status_code == 401:
+            return {"status": "red", "detail": "401 — API key invalid or expired"}
         return {"status": "yellow", "detail": f"HTTP {r.status_code}"}
     except Exception as e:
         return {"status": "red", "detail": f"Connection failed: {str(e)[:80]}"}
@@ -197,19 +223,21 @@ async def get_latest_report() -> dict | None:
 
 
 async def run_monitoring() -> dict:
-    shopify, anthropic, ollama, etsy = await asyncio.gather(
+    shopify, anthropic, ollama, printify_etsy, etsy_api = await asyncio.gather(
         _check_shopify(),
         _check_anthropic(),
         _check_ollama(),
         _check_printify_etsy(),
+        _check_etsy_api(),
     )
 
     systems = [
-        {"name": "Server",           "key": "server",    "status": "green", "detail": "Responding — you're reading this"},
-        {"name": "Shopify API",      "key": "shopify",   **shopify},
-        {"name": "Printify Etsy",    "key": "etsy",      **etsy},
-        {"name": "Anthropic API",    "key": "anthropic", **anthropic},
-        {"name": "Ollama",           "key": "ollama",    **ollama},
+        {"name": "Server",           "key": "server",        "status": "green", "detail": "Responding — you're reading this"},
+        {"name": "Shopify API",      "key": "shopify",       **shopify},
+        {"name": "Printify Etsy",    "key": "printify_etsy", **printify_etsy},
+        {"name": "Etsy API",         "key": "etsy_api",      **etsy_api},
+        {"name": "Anthropic API",    "key": "anthropic",     **anthropic},
+        {"name": "Ollama",           "key": "ollama",        **ollama},
     ]
 
     for room_key, room_name in _BUILT_ROOMS:

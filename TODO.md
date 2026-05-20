@@ -37,10 +37,14 @@
 
 **P1 — Unblocks everything**
 - [x] Migrate all services to zurg-account@example.com — Anthropic ✅, Google ✅, Printify ✅, Publer (deferred — needs Business plan), OpenClaw ✅ (already on prod)
-- [x] **Etsy sales channel** — Etsy Marketplace API approved; connect Etsy store to Printify (same as Shopify), add `PRINTIFY_ETSY_SHOP_ID` to `.env`, update Factory Room to publish to both Printify shops on every approval. No separate Etsy API needed — Printify handles fulfilment for both channels.
+- [x] **Etsy sales channel (publishing)** — Factory Room now publishes every approved design to both Shopify and Etsy in parallel via Printify. `PRINTIFY_ETSY_SHOP_ID=<PRINTIFY_ETSY_SHOP_ID>` in `.env`.
+- [x] **Etsy API — market research** — `market_intel.py` now uses Etsy API as fallback data source (Everbee → Etsy API → DDG). Searches 5 niche keyword sets, returns titles/tags/views/favorites from live public listings.
+- [x] **Etsy API — shop health audit** — Shop Health Room now audits KrakenAndCoDesigns Etsy listings alongside Shopify. Checks title length, tag count (out of 13), description, views. Etsy section shown in UI panel with clickable listing links.
+- [x] **Etsy API — monitoring** — Monitoring Room now checks Etsy API key health alongside all other systems.
 
 **P2 — Makes the system production-ready**
 - [ ] LLM audit — right model per agent; Haiku for simple tasks (intent classification, acks), Sonnet for complex (research, briefings). Crosses off the LLM split Final Vision item.
+- [ ] Etsy order/revenue data — requires OAuth 2.0 flow (separate from API key). Would unlock Etsy sales in Analytics Room and CS Room. Build when store has real orders.
 - [ ] Ideogram + Flux image fallbacks — Imagen fails silently right now; fallbacks mean designs never get stuck
 - [ ] Gelato fulfilment fallback — Printify backup
 - [ ] Reviews integration — Judge.me or Yotpo
@@ -53,7 +57,7 @@
 **P4 — Needs real orders first**
 - [ ] CS Room end-to-end test — needs unfulfilled 3+ days, fulfilled 7–60 days, cancelled/refunded orders
 - [ ] Everbee real market data — code complete, waiting on their Open API approval
-- [ ] Better research methods — custom Etsy scraper or alternative data sources
+- [ ] Etsy order/revenue OAuth — see P2 above
 
 **P5 — Long term**
 - [ ] HashiCorp Vault — swap .env secrets; not urgent until real scale
