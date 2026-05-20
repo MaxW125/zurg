@@ -4,6 +4,66 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-20 — LLM Selection Per Room (NEXT SESSION — START HERE)
+
+### Goal
+Assign the right Claude model to every agent — Haiku for fast/cheap tasks, Sonnet for anything requiring reliable structured JSON or complex reasoning.
+
+### What to Build
+
+**1. `agents/llm_client.py` — add `call_claude_haiku()`**
+Currently only has `call_claude()` (Sonnet). Add a parallel function:
+```python
+async def call_claude_haiku(prompt: str, system: str = "", room: str = "unknown") -> str:
+    # Same as call_claude() but model="claude-haiku-4-5-20251001"
+```
+Use the same cap check, cost logging, and Ollama→Claude fallback pattern.
+
+**2. Update each agent — swap `call_claude()` → `call_claude_haiku()` where safe**
+
+Must stay on Sonnet (structured JSON output or large context):
+- `agents/researcher_room_mvp.py` — returns strict JSON brief + receives ~3000 char Etsy context
+- `agents/approval_room_mvp.py` — returns verdict JSON
+- `agents/pricing_room_mvp.py` — returns per-product recommendation JSON
+- `agents/radar_bay_mvp.py` — returns proposals array JSON
+- `agents/armory_mvp.py` — returns SKILL.md with strict frontmatter
+
+Safe to switch to Haiku (free text, simple classification):
+- `agents/ceo_room_mvp.py` — intent classification (maps input to a label)
+- `agents/cs_room_mvp.py` — drafts email replies
+- `agents/factory_room_mvp.py` — writes 2-3 sentence product description
+- `agents/media_bay_mvp.py` — TikTok/Instagram captions
+- `agents/war_room_mvp.py` — synthesis prose
+- `agents/shop_health_room_mvp.py` — fix recommendations (short free text)
+- `agents/analytics_room_mvp.py` — insight commentary
+
+**3. Treasury cost tracking**
+The `call_claude_haiku()` function should log costs at Haiku rates:
+- Haiku 4.5: $0.80/M input tokens, $4.00/M output tokens (vs Sonnet: $3.00/$15.00)
+- Update `COST_PER_INPUT_TOKEN` / `COST_PER_OUTPUT_TOKEN` in `treasury_mvp.py` — currently hardcoded to Sonnet rates only. Need per-model rates.
+
+**4. Researcher Room — data size guard (do this in the same session)**
+While in `researcher_room_mvp.py`, add a character cap on market data before injection:
+```python
+MAX_MARKET_DATA_CHARS = 2000
+if len(market_data) > MAX_MARKET_DATA_CHARS:
+    market_data = market_data[:MAX_MARKET_DATA_CHARS] + "\n...[truncated]"
+```
+This prevents the Ollama → Claude fallback from being triggered by oversized prompts.
+
+### Key Files
+- `agents/llm_client.py` — add `call_claude_haiku()` here first
+- `agents/treasury_mvp.py` — update cost rates to be per-model
+- All agent files listed above — swap the `call_claude()` call
+
+### Gotchas
+- The `call_claude()` fallback pattern is: `try: ollama / except: claude`. Don't change this — just swap which Claude function is called in the except block
+- `call_claude_stream()` in `llm_client.py` is only used for CEO browser chat — leave it on Sonnet, don't touch it
+- Treasury cost logging is currently in `llm_client.py` inside `_log_cost()` — this will need to know which model was used to apply the right rate
+- After switching, run a full pipeline end-to-end (research → design → approval → factory) and check Treasury shows two different cost rates in the ledger
+
+---
+
 ## Session: 2026-05-20 — Etsy API + Product Catalog Expansion
 
 ### What We Did
