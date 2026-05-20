@@ -5,12 +5,13 @@ import anthropic
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = "llama3.2"
 CLAUDE_MODEL = "claude-sonnet-4-6"
+CLAUDE_HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 
-def _log_cost(room: str, tokens_in: int, tokens_out: int) -> None:
+def _log_cost(room: str, model: str, tokens_in: int, tokens_out: int) -> None:
     try:
         from agents.treasury_mvp import append_cost_entry
-        append_cost_entry(room, CLAUDE_MODEL, tokens_in, tokens_out)
+        append_cost_entry(room, model, tokens_in, tokens_out)
     except Exception:
         pass  # never let cost logging crash an agent
 
@@ -42,7 +43,7 @@ async def call_local(prompt: str, system: str = "") -> str:
 
 
 async def call_claude(prompt: str, system: str = "", room: str = "unknown") -> str:
-    """Call Claude Sonnet. Used as fallback or in production."""
+    """Call Claude Sonnet. Used as fallback for complex/JSON tasks."""
     _check_cap()
     client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
     kwargs = {
@@ -54,7 +55,24 @@ async def call_claude(prompt: str, system: str = "", room: str = "unknown") -> s
         kwargs["system"] = system
 
     message = await client.messages.create(**kwargs)
-    _log_cost(room, message.usage.input_tokens, message.usage.output_tokens)
+    _log_cost(room, CLAUDE_MODEL, message.usage.input_tokens, message.usage.output_tokens)
+    return message.content[0].text.strip()
+
+
+async def call_claude_haiku(prompt: str, system: str = "", room: str = "unknown") -> str:
+    """Call Claude Haiku. Used as fallback for simple/free-text tasks."""
+    _check_cap()
+    client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+    kwargs = {
+        "model": CLAUDE_HAIKU_MODEL,
+        "max_tokens": 2048,
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    if system:
+        kwargs["system"] = system
+
+    message = await client.messages.create(**kwargs)
+    _log_cost(room, CLAUDE_HAIKU_MODEL, message.usage.input_tokens, message.usage.output_tokens)
     return message.content[0].text.strip()
 
 

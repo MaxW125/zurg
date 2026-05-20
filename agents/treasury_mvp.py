@@ -7,9 +7,12 @@ BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 COSTS_LEDGER = os.path.join(BRAIN_PATH, "rooms", "treasury", "costs.jsonl")
 CONFIG_PATH  = os.path.join(BRAIN_PATH, "rooms", "treasury", "treasury_config.json")
 
-# Claude Sonnet 4.6 pricing (USD per token)
-COST_PER_INPUT_TOKEN  = 3.00  / 1_000_000
-COST_PER_OUTPUT_TOKEN = 15.00 / 1_000_000
+# Pricing per model (USD per token)
+_MODEL_RATES: dict[str, tuple[float, float]] = {
+    "claude-sonnet-4-6":         (3.00  / 1_000_000, 15.00 / 1_000_000),
+    "claude-haiku-4-5-20251001": (0.80  / 1_000_000,  4.00 / 1_000_000),
+}
+_DEFAULT_RATES = _MODEL_RATES["claude-sonnet-4-6"]  # safe fallback
 
 DEFAULT_DAILY_CAP = 1.00
 
@@ -33,7 +36,8 @@ def set_config(daily_cap_usd: float) -> dict:
 
 def append_cost_entry(room: str, model: str, tokens_in: int, tokens_out: int) -> float:
     """Write one cost line to the ledger. Returns cost_usd."""
-    cost = round(tokens_in * COST_PER_INPUT_TOKEN + tokens_out * COST_PER_OUTPUT_TOKEN, 6)
+    rate_in, rate_out = _MODEL_RATES.get(model, _DEFAULT_RATES)
+    cost = round(tokens_in * rate_in + tokens_out * rate_out, 6)
     entry = {
         "ts":        datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
         "room":      room,

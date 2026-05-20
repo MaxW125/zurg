@@ -2,7 +2,7 @@ import os
 import json
 import asyncio
 from datetime import datetime, timezone
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_local, call_claude_haiku
 from agents.brain import load_system_prompt
 import httpx
 
@@ -163,7 +163,7 @@ Format EXACTLY as:
         raw = await call_local(prompt, system=system)
         model_used = "ollama"
     except Exception:
-        raw = await call_claude(prompt, system=system, room="shophealth")
+        raw = await call_claude_haiku(prompt, system=system, room="shophealth")
         model_used = "claude"
 
     import re
@@ -299,7 +299,7 @@ Format EXACTLY as:
         raw = await call_local(prompt, system=system)
         model_used = "ollama"
     except Exception:
-        raw = await call_claude(prompt, system=system, room="shophealth")
+        raw = await call_claude_haiku(prompt, system=system, room="shophealth")
         model_used = "claude"
 
     import re

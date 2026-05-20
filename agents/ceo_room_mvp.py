@@ -1,6 +1,6 @@
 import os
 import json
-from agents.llm_client import call_local, call_claude, call_local_stream, call_claude_stream
+from agents.llm_client import call_local, call_claude_haiku, call_local_stream, call_claude_stream
 from agents.brain import load_system_prompt
 
 BRAIN_PATH      = os.getenv("BRAIN_PATH", "./brain")
@@ -105,7 +105,7 @@ Write a short 1-sentence acknowledgement of what you're about to do."""
         ack = await call_local(ack_prompt, system=identity)
     except Exception:
         model_used = "claude"
-        ack = await call_claude(ack_prompt, system=identity, room="ceo")
+        ack = await call_claude_haiku(ack_prompt, system=identity, room="ceo")
 
     # Delegate based on intent
     data = {}
@@ -145,7 +145,7 @@ Write 1 sentence telling the owner the design is ready and asking them to approv
             try:
                 response = await call_local(summary_prompt, system=identity)
             except Exception:
-                response = await call_claude(summary_prompt, system=identity, room="ceo")
+                response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
 
     elif intent == "pipeline":
         from agents.researcher_room_mvp import run_researcher
@@ -163,7 +163,7 @@ Write 2 sentences: summarise the niche the Researcher found, then tell the owner
         try:
             response = await call_local(summary_prompt, system=identity)
         except Exception:
-            response = await call_claude(summary_prompt, system=identity, room="ceo")
+            response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
 
     elif intent == "publish":
         design = input.get("design", {})
@@ -179,7 +179,7 @@ Write 1 sentence confirming the Factory agent got the product live and share the
             try:
                 response = await call_local(summary_prompt, system=identity)
             except Exception:
-                response = await call_claude(summary_prompt, system=identity, room="ceo")
+                response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
 
     elif intent == "set_reporting":
         mode = "weekly" if any(w in message.lower() for w in ["weekly", "week"]) else "daily"
@@ -191,14 +191,14 @@ Write 1 sentence confirming the Factory agent got the product live and share the
         try:
             response = await call_local(confirm_prompt, system=identity)
         except Exception:
-            response = await call_claude(confirm_prompt, system=identity, room="ceo")
+            response = await call_claude_haiku(confirm_prompt, system=identity, room="ceo")
 
     else:
         # General chat
         try:
             response = await call_local(message, system=identity)
         except Exception:
-            response = await call_claude(message, system=identity, room="ceo")
+            response = await call_claude_haiku(message, system=identity, room="ceo")
 
     return {
         "intent": intent,

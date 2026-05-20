@@ -2,7 +2,7 @@ import os
 import asyncio
 import base64
 import httpx
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_local, call_claude_haiku
 from agents.printify_client import upload_image, create_product, get_mockup_urls, download_mockup, publish_product, get_product
 from agents.product_catalog import get_blueprint
 from agents.notify import notify
@@ -89,7 +89,7 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
         description = await call_local(desc_prompt, system=description_system)
     except Exception:
         model_used = "claude"
-        description = await call_claude(desc_prompt, system=description_system, room="factory")
+        description = await call_claude_haiku(desc_prompt, system=description_system, room="factory")
 
     title = f"{niche} — {product_type}"
 

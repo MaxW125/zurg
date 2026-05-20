@@ -152,6 +152,9 @@ async def run_researcher(input: dict) -> dict:
     print("[researcher] Fetching live market data...")
     market_data = await gather_trends()
     if market_data:
+        MAX_MARKET_DATA_CHARS = 2000
+        if len(market_data) > MAX_MARKET_DATA_CHARS:
+            market_data = market_data[:MAX_MARKET_DATA_CHARS] + "\n...[truncated]"
         print(f"[researcher] Market data ({len(market_data)} chars):\n{market_data}\n---")
     else:
         print("[researcher] No market data available — using LLM knowledge only")

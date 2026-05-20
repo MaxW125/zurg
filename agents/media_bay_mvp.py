@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_local, call_claude_haiku
 from agents.brain import load_system_prompt
 import httpx
 
@@ -119,7 +119,7 @@ Generate TikTok and Instagram captions following the exact format specified in y
         text = await call_local(prompt, system=system)
         model = "ollama"
     except Exception:
-        text = await call_claude(prompt, system=system, room="mediabay")
+        text = await call_claude_haiku(prompt, system=system, room="mediabay")
         model = "claude"
 
     content = _parse_content(text)

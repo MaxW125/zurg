@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_local, call_claude_haiku
 from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
@@ -183,7 +183,7 @@ Synthesise this into a prioritised action plan. Output only the JSON specified."
         raw = await call_local(prompt, system=system)
         model_used = "ollama"
     except Exception:
-        raw = await call_claude(prompt, system=system, room="warroom")
+        raw = await call_claude_haiku(prompt, system=system, room="warroom")
         model_used = "claude"
 
     # Extract JSON from response
