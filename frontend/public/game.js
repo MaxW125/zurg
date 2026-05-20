@@ -558,39 +558,54 @@ async function renderApproval(body) {
   }
 
   // ── Manual mode: owner reviews ──
+  const d = state.design;
+  const tagsHtml = (d.tags || []).map(t => `<span style="display:inline-block;background:#2d1060;color:#a855f7;border:1px solid #7c3aed;padding:2px 6px;margin:2px;font-size:6px;letter-spacing:1px">${escHtml(t)}</span>`).join('');
+
+  function fieldBlock(id, label, content) {
+    return `
+      <div class="panel-section" style="margin-top:8px" id="field-${id}">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <div class="panel-section-title" style="margin-bottom:0;font-size:7px">▶ ${label}</div>
+          <label style="font-family:'Press Start 2P',monospace;font-size:6px;color:#ff4444;cursor:pointer;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" id="bad-${id}" onchange="toggleFieldFeedback('${id}')" style="cursor:pointer"> MARK BAD
+          </label>
+        </div>
+        <div style="margin-top:6px;font-size:7px;line-height:1.8;color:var(--text)">${content}</div>
+        <textarea id="fb-${id}" class="feedback-input" placeholder="Required: what's wrong with the ${label.toLowerCase()}?"
+                  style="display:none;margin-top:6px;border-color:#ff4444"></textarea>
+      </div>`;
+  }
+
   body.innerHTML = `
     <div class="room-panel">
       ${statsHtml}
       <div class="panel-section">
-        <div class="panel-section-title">▶ DESIGN AWAITING YOUR VERDICT</div>
-        <img class="design-preview" src="${escHtml(state.design.image_path)}" alt="Design">
-        <div class="brief-field">NICHE: <span>${escHtml(state.design.niche)}</span></div>
-        <div class="brief-field">PRODUCT: <span>${escHtml(state.design.product_type)}</span></div>
-        <div id="agent-analysis" class="panel-section" style="border-color:#00994d">
+        <div class="panel-section-title">▶ AWAITING YOUR VERDICT</div>
+        <div class="brief-field">NICHE: <span>${escHtml(d.niche)}</span></div>
+        <div class="brief-field">PRODUCT: <span>${escHtml(d.product_type)}</span></div>
+
+        ${fieldBlock('design', 'DESIGN', `<img class="design-preview" src="${escHtml(d.image_path)}" alt="Design" style="margin-top:6px">`)}
+        ${fieldBlock('title', 'TITLE', escHtml(d.title || '(no title yet)'))}
+        ${fieldBlock('description', 'DESCRIPTION', escHtml(d.description || '(no description yet)'))}
+        ${fieldBlock('tags', 'TAGS (${(d.tags||[]).length}/13)', tagsHtml || '(no tags yet)')}
+
+        <div id="agent-analysis" class="panel-section" style="border-color:#00994d;margin-top:8px">
           <div class="panel-section-title" style="color:var(--green)">▶ APPROVAL AGENT ANALYSIS</div>
           <div class="loading-row"><div class="spinner"></div> ANALYZING...</div>
         </div>
-        <div class="panel-section-title" style="margin-top:10px">▶ YOUR FEEDBACK (REQUIRED ON REJECT)</div>
-        <textarea id="approval-feedback" class="feedback-input"
-                  placeholder="e.g. Love the vintage style — ship it. / Too generic, needs a unique angle..."></textarea>
-        <div id="approval-status"></div>
-        <div class="approval-buttons">
-          <button class="btn btn-green" id="approve-btn" onclick="approveDesign()">✓ APPROVE</button>
+        <div id="approval-status" style="margin-top:8px"></div>
+        <div class="approval-buttons" style="margin-top:10px">
+          <button class="btn btn-green" id="approve-btn" onclick="approveDesign()">✓ APPROVE ALL</button>
           <button class="btn btn-red"   id="reject-btn"  onclick="rejectDesign()">✕ REJECT</button>
         </div>
       </div>
     </div>`;
 
-  // Fetch analysis in background
+  // Fetch agent analysis in background
   fetch(`${API}/api/approval/analyze`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      niche: state.design.niche,
-      product_type: state.design.product_type,
-      image_path: state.design.image_path,
-      image_prompt: state.design.image_prompt || '',
-    }),
+    body: JSON.stringify({ niche: d.niche, product_type: d.product_type, image_path: d.image_path, image_prompt: d.image_prompt || '' }),
   })
     .then(r => r.json())
     .then(data => {
@@ -606,34 +621,48 @@ async function renderApproval(body) {
     });
 }
 
+function toggleFieldFeedback(id) {
+  const cb = document.getElementById(`bad-${id}`);
+  const fb = document.getElementById(`fb-${id}`);
+  const section = document.getElementById(`field-${id}`);
+  if (!cb || !fb) return;
+  fb.style.display = cb.checked ? 'block' : 'none';
+  if (section) section.style.borderColor = cb.checked ? '#ff4444' : '';
+  if (cb.checked) fb.focus();
+}
+
+function _collectFieldDecisions() {
+  const fields = ['design', 'title', 'description', 'tags'];
+  const result = {};
+  for (const f of fields) {
+    const bad = document.getElementById(`bad-${f}`)?.checked || false;
+    const fb  = document.getElementById(`fb-${f}`)?.value.trim() || '';
+    result[`${f}_ok`]       = !bad;
+    result[`${f}_feedback`] = fb;
+  }
+  return result;
+}
+
 async function approveDesign() {
   if (state.loading || !state.design) return;
   state.loading = true;
 
-  const feedback = document.getElementById('approval-feedback')?.value.trim() || '';
   const statusEl = document.getElementById('approval-status');
   const appBtn   = document.getElementById('approve-btn');
   const rejBtn   = document.getElementById('reject-btn');
 
-  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> APPROVING — PUBLISHING TO SHOPIFY...</div>`;
+  if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> APPROVING — PUBLISHING TO SHOPIFY + ETSY...</div>`;
   if (appBtn) appBtn.disabled = true;
   if (rejBtn) rejBtn.disabled = true;
 
   try {
-    const payload = {
-      approved: true,
-      feedback,
-      ...state.brief,
-      ...state.design,
-    };
-    const res = await fetch(`${API}/api/approval/decide`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const payload = { approved: true, ...state.brief, ...state.design };
+    const res  = await fetch(`${API}/api/approval/decide`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     });
     const data = await res.json();
     state.product = data.product;
-    toast('APPROVED + PUBLISHED! CHECK SHOPIFY ADMIN.' + (state.autoMediaBay ? ' — GENERATING CONTENT...' : ''));
+    toast('APPROVED + PUBLISHED!' + (state.autoMediaBay ? ' — GENERATING CONTENT...' : ''));
     renderPanel('approval');
     if (state.autoMediaBay) setTimeout(() => _runAutoMediaBay(), 600);
   } catch (e) {
@@ -646,28 +675,31 @@ async function approveDesign() {
 }
 
 async function rejectDesign() {
-  const feedback = document.getElementById('approval-feedback')?.value.trim() || '';
-  if (!feedback) {
-    toast('ADD FEEDBACK BEFORE REJECTING — TEACH THE APPROVAL AGENT.');
+  const fields   = _collectFieldDecisions();
+  const anyBad   = ['design', 'title', 'description', 'tags'].some(f => !fields[`${f}_ok`]);
+
+  if (!anyBad) {
+    toast('MARK AT LEAST ONE FIELD AS BAD BEFORE REJECTING.');
+    return;
+  }
+
+  // Enforce required comment on every bad field
+  const missing = ['design', 'title', 'description', 'tags'].filter(f => !fields[`${f}_ok`] && !fields[`${f}_feedback`]);
+  if (missing.length) {
+    toast(`ADD FEEDBACK FOR: ${missing.map(f => f.toUpperCase()).join(', ')}`);
+    missing.forEach(f => document.getElementById(`fb-${f}`)?.focus());
     return;
   }
 
   try {
-    const payload = {
-      approved: false,
-      feedback,
-      ...state.brief,
-      ...state.design,
-    };
+    const payload = { approved: false, ...fields, ...state.brief, ...state.design };
     await fetch(`${API}/api/approval/decide`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     });
   } catch (_) {}
 
   state.design = null;
-  toast('REJECTED + LOGGED — GENERATE A NEW DESIGN.');
+  toast('REJECTED — ZURG IS REWORKING THE FLAGGED FIELDS.');
   renderPanel('approval');
 }
 

@@ -1,10 +1,11 @@
 import os
+import json
 import asyncio
 from datetime import datetime
 from google import genai
 from google.genai import types
 from rembg import remove as rembg_remove
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_local, call_claude, call_claude_haiku
 from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
@@ -22,6 +23,45 @@ Rules:
 - Output the image prompt first, then SHIRT_COLOR on a new line. Nothing else."""
 
 TRANSPARENCY_SUFFIX = "flat vector illustration on a pure transparent background, no background, isolated artwork, PNG with transparency"
+
+
+async def _generate_copy(niche: str, product_type: str, image_prompt: str, target_audience: str, keywords: list, denial_context: str = "") -> dict:
+    """Generate Etsy-optimised title, description, and 13 tags via Haiku."""
+    denial_note = (
+        f"\n\nPREVIOUS COPY WAS REJECTED — Owner feedback: {denial_context}\n"
+        "Address this feedback directly in the new copy."
+    ) if denial_context else ""
+
+    prompt = f"""Write Etsy product copy for a {product_type} in the "{niche}" niche.
+
+Design: {image_prompt[:300]}
+Target audience: {target_audience}
+Seed keywords: {', '.join(keywords)}{denial_note}
+
+Return ONLY a valid JSON object with these exact keys:
+- title: compelling Etsy product title, max 140 chars, keyword-rich and specific (e.g. "Funny Dachshund Mom Coffee Mug — Wiener Dog Lover Gift — Dog Mom Cup")
+- description: 2-3 engaging sentences aimed at the niche audience, highlight what makes it special
+- tags: array of exactly 13 Etsy tags, relevant and specific, mix of broad and niche terms, max 20 chars each, no duplicates
+
+Raw JSON only. No explanation."""
+
+    try:
+        raw = await call_claude_haiku(prompt, room="design")
+        # Strip markdown fences if present
+        raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        data = json.loads(raw)
+        return {
+            "title":       str(data.get("title", f"{niche} — {product_type}"))[:140],
+            "description": str(data.get("description", "")),
+            "tags":        [str(t)[:20] for t in (data.get("tags") or [])[:13]],
+        }
+    except Exception as e:
+        print(f"[designer] Copy generation failed: {e} — using fallback")
+        return {
+            "title":       f"{niche} — {product_type}",
+            "description": "",
+            "tags":        keywords[:13],
+        }
 
 
 def _build_prompt_request(brief: dict) -> str:
@@ -123,11 +163,24 @@ async def run_designer(input: dict) -> dict:
     slug = input.get("niche", "design").lower().replace(" ", "_")[:30]
     image_path = _save_image(image_bytes, slug)
 
+    # Step 5 — generate Etsy copy (title, description, 13 tags)
+    copy = await _generate_copy(
+        niche=input.get("niche", ""),
+        product_type=input.get("product_type", ""),
+        image_prompt=image_prompt,
+        target_audience=input.get("target_audience", ""),
+        keywords=input.get("keywords", []),
+        denial_context=input.get("denial_context", ""),
+    )
+
     return {
         "image_path":   image_path,
         "image_prompt": image_prompt,
         "shirt_color":  shirt_color,
         "niche":        input.get("niche", ""),
         "product_type": input.get("product_type", ""),
+        "title":        copy["title"],
+        "description":  copy["description"],
+        "tags":         copy["tags"],
         "model_used":   model_used,
     }

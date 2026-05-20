@@ -23,13 +23,30 @@ class DesignAnalysisRequest(BaseModel):
 
 class ApprovalDecision(BaseModel):
     approved: bool
+    # Per-field approval flags (True = good, False = needs rework)
+    design_ok: bool = True
+    title_ok: bool = True
+    description_ok: bool = True
+    tags_ok: bool = True
+    # Per-field feedback (required when field is not ok)
+    design_feedback: str = ""
+    title_feedback: str = ""
+    description_feedback: str = ""
+    tags_feedback: str = ""
+    # Legacy single feedback field — still used by auto-decide path
     feedback: str = ""
+    # Design data
     niche: str = ""
     product_type: str = ""
     image_path: str = ""
     image_prompt: str = ""
     keywords: list[str] = []
     design_direction: str = ""
+    target_audience: str = ""
+    # Pre-generated copy (from designer step)
+    title: str = ""
+    description: str = ""
+    tags: list[str] = []
 
 
 def _save_verdict(decision: ApprovalDecision) -> None:
@@ -43,14 +60,30 @@ def _save_verdict(decision: ApprovalDecision) -> None:
     filename = f"verdict_{timestamp}_{verdict_word}_{slug}.md"
     filepath = os.path.join(approvals_dir, filename)
 
+    field_lines = []
+    for field, ok_attr, fb_attr in [
+        ("Design",      "design_ok",      "design_feedback"),
+        ("Title",       "title_ok",       "title_feedback"),
+        ("Description", "description_ok", "description_feedback"),
+        ("Tags",        "tags_ok",        "tags_feedback"),
+    ]:
+        ok = getattr(decision, ok_attr, True)
+        fb = getattr(decision, fb_attr, "")
+        status = "✓ OK" if ok else f"✗ BAD — {fb}"
+        field_lines.append(f"- {field}: {status}")
+
     content = f"""# Verdict: {verdict_word}
 Date: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")} UTC
 Niche: {decision.niche}
 Product: {decision.product_type}
+Title: {decision.title}
 Image: {decision.image_path}
 
-## Owner Feedback
-{decision.feedback or "(no feedback provided)"}
+## Field Verdicts
+{chr(10).join(field_lines)}
+
+## Owner Feedback (summary)
+{decision.feedback or "(no summary provided)"}
 
 ## Tags
 niche:{decision.niche.lower().replace(" ", "-")} product:{decision.product_type.lower().replace(" ", "-")} verdict:{verdict_word}
@@ -147,8 +180,10 @@ async def get_verdicts():
     return _load_verdicts()
 
 
-async def _trigger_redesign(feedback: str, body: ApprovalDecision) -> None:
-    """Load the last brief, inject denial feedback, and re-run the designer."""
+async def _trigger_rework(body: ApprovalDecision) -> None:
+    """Regenerate only the fields Max marked as bad. If design is bad, always redo copy too."""
+    from agents.designer_room_mvp import run_designer, _generate_copy
+
     brain = os.getenv("BRAIN_PATH", "./brain")
     brief_path = os.path.join(brain, "rooms", "captain", "last_brief.json")
     try:
@@ -158,24 +193,62 @@ async def _trigger_redesign(feedback: str, body: ApprovalDecision) -> None:
         brief = {
             "niche": body.niche,
             "product_type": body.product_type,
-            "target_audience": "",
+            "target_audience": body.target_audience,
             "keywords": body.keywords,
             "design_direction": body.design_direction,
         }
 
-    brief["denial_context"] = feedback or "No specific feedback — try a different visual approach."
+    design = {
+        "image_path":   body.image_path,
+        "image_prompt": body.image_prompt,
+        "niche":        body.niche,
+        "product_type": body.product_type,
+        "title":        body.title,
+        "description":  body.description,
+        "tags":         body.tags,
+    }
 
     try:
-        design = await run_designer(brief)
+        if not body.design_ok:
+            # Regenerate image — and always redo copy from the new design
+            brief["denial_context"] = body.design_feedback or "Try a different visual approach."
+            design = await run_designer(brief)
+        else:
+            # Keep image, selectively redo bad copy fields
+            copy_denial_parts = []
+            if not body.title_ok:
+                copy_denial_parts.append(f"Title: {body.title_feedback}")
+            if not body.description_ok:
+                copy_denial_parts.append(f"Description: {body.description_feedback}")
+            if not body.tags_ok:
+                copy_denial_parts.append(f"Tags: {body.tags_feedback}")
+
+            if copy_denial_parts:
+                copy = await _generate_copy(
+                    niche=body.niche,
+                    product_type=body.product_type,
+                    image_prompt=body.image_prompt,
+                    target_audience=body.target_audience,
+                    keywords=body.keywords,
+                    denial_context="\n".join(copy_denial_parts),
+                )
+                if not body.title_ok:
+                    design["title"] = copy["title"]
+                if not body.description_ok:
+                    design["description"] = copy["description"]
+                if not body.tags_ok:
+                    design["tags"] = copy["tags"]
+
         design_path = os.path.join(brain, "rooms", "captain", "last_design.json")
         with open(design_path, "w") as f:
             json.dump(design, f, indent=2)
+
         await notify(
-            f"🎨 Redesign ready: {design['niche']} — {design['product_type']}\n"
-            "Open the Approval Room to approve or deny."
+            f"🎨 Rework ready: {design['niche']} — {design['product_type']}\n"
+            "Open the Approval Room to review."
         )
     except Exception as e:
-        await notify(f"⚠️ Redesign failed for {body.niche}: {str(e)[:100]}")
+        await notify(f"⚠️ Rework failed for {body.niche}: {str(e)[:100]}")
 
 
 @router.post("/decide")
@@ -189,10 +262,18 @@ async def decide_approval(body: ApprovalDecision, background_tasks: BackgroundTa
     _save_verdict(body)
 
     if not body.approved:
-        background_tasks.add_task(_trigger_redesign, body.feedback, body)
+        # Build summary feedback string for the verdict file
+        parts = []
+        if not body.design_ok:       parts.append(f"Design: {body.design_feedback}")
+        if not body.title_ok:        parts.append(f"Title: {body.title_feedback}")
+        if not body.description_ok:  parts.append(f"Description: {body.description_feedback}")
+        if not body.tags_ok:         parts.append(f"Tags: {body.tags_feedback}")
+        body.feedback = " | ".join(parts)
+
+        background_tasks.add_task(_trigger_rework, body)
         return {
             "approved": False,
-            "message": "Design rejected. Zurg is generating a new design — you'll get a text when it's ready.",
+            "message": "Rejected. Zurg is reworking the flagged fields — you'll get a text when it's ready.",
         }
 
     if not body.image_path:

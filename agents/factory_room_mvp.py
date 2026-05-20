@@ -79,19 +79,21 @@ async def run_factory(input: dict) -> dict:
     _raw_color   = input.get("shirt_color", blueprint.get("preferred_color", "black")).lower()
     shirt_color  = _raw_color
 
-    # Step 1 — write product description
-    desc_prompt = f"""Write a product description for a {product_type} in the "{niche}" niche.
+    # Step 1 — use pre-approved copy if available, else generate fallback
+    model_used = "pre-approved"
+    title       = input.get("title") or f"{niche} — {product_type}"
+    description = input.get("description") or ""
+
+    if not description:
+        desc_prompt = f"""Write a product description for a {product_type} in the "{niche}" niche.
 Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
-
-    description_system = load_system_prompt("factory", "factory", _DESCRIPTION_FALLBACK)
-    model_used = "ollama"
-    try:
-        description = await call_local(desc_prompt, system=description_system)
-    except Exception:
-        model_used = "claude"
-        description = await call_claude_haiku(desc_prompt, system=description_system, room="factory")
-
-    title = f"{niche} — {product_type}"
+        description_system = load_system_prompt("factory", "factory", _DESCRIPTION_FALLBACK)
+        model_used = "ollama"
+        try:
+            description = await call_local(desc_prompt, system=description_system)
+        except Exception:
+            model_used = "claude"
+            description = await call_claude_haiku(desc_prompt, system=description_system, room="factory")
 
     printify_token   = os.getenv("PRINTIFY_API_TOKEN", "")
     etsy_shop_id     = os.getenv("PRINTIFY_ETSY_SHOP_ID", "")
@@ -125,7 +127,7 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
                     image_id=image_id,
                     blueprint_id=blueprint["blueprint_id"],
                     print_provider_id=blueprint["print_provider"],
-                    tags=input.get("keywords", []),
+                    tags=input.get("tags") or input.get("keywords", []),
                     preferred_color=shirt_color,
                 )
                 pid                   = printify_product["id"]
@@ -150,7 +152,7 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
                 "body_html":    f"<p>{description}</p>",
                 "product_type": product_type,
                 "status":       "draft",
-                "tags":         ", ".join(input.get("keywords", [])),
+                "tags":         ", ".join(input.get("tags") or input.get("keywords", [])),
                 "variants":     [{"price": "29.99", "requires_shipping": True, "taxable": True}],
             }
         }
@@ -182,7 +184,7 @@ Design: {input.get('image_prompt', input.get('design_direction', ''))}"""
                 image_id=image_id,
                 blueprint_id=blueprint["blueprint_id"],
                 print_provider_id=blueprint["print_provider"],
-                tags=input.get("keywords", []),
+                tags=input.get("tags") or input.get("keywords", []),
                 preferred_color=shirt_color,
                 shop_id=etsy_shop_id,
             )
