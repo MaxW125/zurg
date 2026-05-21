@@ -2,7 +2,7 @@ import os
 import json
 import re
 from datetime import datetime
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
@@ -234,8 +234,7 @@ Analyse this and produce a prioritised list of improvement proposals. Focus on:
 Output only the JSON specified."""
 
     try:
-        raw = await call_local(prompt, system=system)
-        model_used = "ollama"
+        raw = await call_claude(prompt, system=system, room="radar")
     except Exception:
         raw = await call_claude(prompt, system=system, room="radarbay")
         model_used = "claude"

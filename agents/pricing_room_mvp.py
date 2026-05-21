@@ -3,7 +3,7 @@ import os
 import json
 import glob
 from datetime import datetime, timezone
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
 import httpx
 
@@ -168,8 +168,8 @@ Then give a 2-3 sentence overall pricing strategy summary."""
 
     system = load_system_prompt("pricing", "pricing", _PRICING_FALLBACK)
     try:
-        text = await call_local(prompt, system=system)
-        return text, "ollama"
+        text = await call_claude(prompt, system=system, room="pricing")
+        return text, "claude"
     except Exception:
         text = await call_claude(prompt, system=system, room="pricing")
         return text, "claude"

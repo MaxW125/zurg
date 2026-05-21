@@ -4,6 +4,48 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-21 — Factory Mockup & Etsy Fix (IN PROGRESS — testing)
+
+### What We Fixed
+Long debugging session focused entirely on the factory publishing pipeline.
+
+**Root cause discovered:** Printify only generates mockup images **after** `publish_product()` is called, not during `create_product()`. Our old flow polled for mockups before publishing, so it always timed out and fell back to the flat design.
+
+**Key changes made:**
+
+1. **`agents/factory_room_mvp.py`** — Complete flow redesign:
+   - **Etsy runs first (sequential, not parallel)**: create → publish → poll for mockups (Phase 1, up to 120s) → poll for Etsy listing URL (Phase 2, 30s) → auto-retry publish once if URL not found (Printify shows "Publishing error" on first attempt, retry always succeeds)
+   - **Shopify runs second**: uses the mockup image downloaded from Etsy, creates Shopify product via Shopify API (draft), tries Printify publish (fails silently if shop disconnected — caught and logged)
+   - **Separate WhatsApp texts**: "✅ Shopify live" fires when Shopify done; "✅ Etsy live" only fires if Etsy URL confirmed
+
+2. **`agents/printify_client.py`**:
+   - `publish_product()` now logs clearly when it returns `{}` (normal for Etsy success; means disconnected for Shopify)
+   - `create_product()` variant color parsing fixed: handles both "Color / Size" (most apparel) and "Size / Color" (some Gildan blueprints like sweatshirts) by detecting size abbreviations in the first segment
+
+3. **`agents/product_catalog.py`**:
+   - Crewneck Sweatshirt switched from provider 29 (Monster Digital) to provider 39 (SwiftPOD) — Monster Digital never generates mockups for blueprint 49
+
+### Current State
+- Shopify: ✅ working (real mockup images, apron confirmed working)
+- Etsy: ⚠️ mostly working — listings ARE created, but Printify shows "Publishing error" on first attempt; auto-retry in code handles this. User testing right now.
+- Printify-Shopify connection: `"disconnected"` — `publish_product()` to Shopify shop always 400s. Caught silently. Mockups come from Etsy product instead.
+
+### Gotchas
+- **Printify-Shopify is still `"disconnected"`**: The Shopify shop (ID <PRINTIFY_SHOP_ID>) has `sales_channel: "disconnected"`. All Shopify products are created manually via Shopify API. Printify products in the Shopify shop exist but can't be published (need to reconnect in Printify → Store Settings → Kraken & Co.)
+- **Etsy publish retry is required**: First publish attempt to Etsy typically fails silently (returns `{}` but Printify shows "Publishing error" in UI). Code now retries once automatically, which matches what manual retry in Printify does.
+- **Mockup timing**: Mockups appear within ~15-30s after publish. Phase 1 polls up to 120s but breaks as soon as images appear. Fast in practice.
+- **Etsy URL polling**: Etsy listing URL takes 30-60s to appear in the Printify API after publish. Code polls 30s after first publish, 30s after retry. If still not found, logs warning but doesn't crash.
+- **Variant color format**: Some blueprints use "Size / Color" not "Color / Size" — parsing now handles both. Sweatshirt had 0 preferred variants before fix.
+
+### What's Next
+- Confirm Etsy end-to-end working after today's test
+- Fix Printify-Shopify connection (go to Printify → Store Settings → Kraken & Co. → reconnect Shopify)
+- Once Shopify reconnected: test that `publish_product()` to Shopify shop succeeds and products appear live
+- Consider: when Shopify shop reconnects, currently we still create Shopify products manually via Shopify API AND create a Printify product in the Shopify shop (but don't publish it — fulfillment isn't linked). May want to rethink whether to use Printify-Shopify publishing for real fulfillment integration
+- TODO (from previous session): Direct Etsy API publishing to bypass Printify-Etsy OAuth dependency entirely
+
+---
+
 ## Session: 2026-05-20 — Fully Autonomous Pipeline (DONE)
 
 ### What We Built

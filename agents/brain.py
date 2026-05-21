@@ -28,3 +28,26 @@ def load_system_prompt(room: str, agent: str, fallback: str = "") -> str:
             pass
 
     return "\n\n---\n\n".join(parts) if parts else fallback
+
+
+def load_prompt(room: str, agent: str, fallback: str = "") -> str:
+    """
+    Load an agent's user-facing prompt template from the Obsidian vault.
+    File lives at: $BRAIN_PATH/rooms/{room}/agents/{agent}/prompt.md
+
+    Use {PLACEHOLDERS} in the file for dynamic values, then call .replace() after:
+        template = load_prompt("design", "copywriter", FALLBACK)
+        prompt = template.replace("{NICHE}", niche).replace("{PRODUCT_TYPE}", product_type)
+
+    Falls back to `fallback` if the file is missing.
+    """
+    brain_path = os.getenv("BRAIN_PATH", BRAIN_PATH)
+    prompt_path = os.path.join(brain_path, "rooms", room, "agents", agent, "prompt.md")
+    try:
+        with open(prompt_path) as f:
+            content = f.read().strip()
+            if content:
+                return content
+    except FileNotFoundError:
+        pass
+    return fallback

@@ -49,7 +49,7 @@ class ApprovalDecision(BaseModel):
     tags: list[str] = []
 
 
-def _save_verdict(decision: ApprovalDecision) -> None:
+def _save_verdict(decision: ApprovalDecision, source: str = "manual") -> None:
     """Write a verdict markdown file to brain/approvals/ for the Approval Agent to learn from."""
     approvals_dir = os.path.join(BRAIN_PATH, "rooms", "approval", "verdicts")
     os.makedirs(approvals_dir, exist_ok=True)
@@ -74,6 +74,7 @@ def _save_verdict(decision: ApprovalDecision) -> None:
 
     content = f"""# Verdict: {verdict_word}
 Date: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")} UTC
+Source: {source}
 Niche: {decision.niche}
 Product: {decision.product_type}
 Title: {decision.title}
@@ -145,7 +146,7 @@ async def auto_decide_approval(body: ApprovalDecision):
         keywords=body.keywords,
         design_direction=body.design_direction,
     )
-    _save_verdict(decision)
+    _save_verdict(decision, source="auto")
 
     if not result["approved"]:
         await notify(f"❌ Auto-rejected: {body.niche} {body.product_type}\nReason: {result['reasoning'][:120]}")

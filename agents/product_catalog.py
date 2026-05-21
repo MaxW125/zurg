@@ -5,7 +5,7 @@ Blueprint IDs confirmed working:
   6    — Bella+Canvas 3001 Unisex T-Shirt       (provider 29: Monster Digital)
   9    — Gildan 18500 Hoodie                    (provider 29: Monster Digital)
   11   — Bella+Canvas 3501 Long Sleeve          (provider 29: Monster Digital)
-  49   — Gildan Heavy Blend Crewneck Sweatshirt (provider 29: Monster Digital)
+  49   — Gildan Heavy Blend Crewneck Sweatshirt (provider 39: SwiftPOD)
   478  — Ceramic Mug 11oz/15oz                 (provider 29: Monster Digital)
   1313 — Cotton Canvas Tote Bag                (provider 29: Monster Digital)
   282  — Matte Vertical Poster                 (provider 2:  Sensaria)
@@ -42,7 +42,7 @@ CATALOG: dict[str, dict] = {
     },
     "Crewneck Sweatshirt": {
         "blueprint_id":    49,
-        "print_provider":  29,
+        "print_provider":  39,  # SwiftPOD — Monster Digital (29) never generates mockups for bp49
         "position":        "front",
         "preferred_color": "black",
         "default_colors":  ["black", "navy", "dark heather"],

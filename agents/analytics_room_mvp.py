@@ -2,7 +2,7 @@ import os
 import json
 import glob
 from datetime import datetime
-from agents.llm_client import call_local, call_claude_haiku
+from agents.llm_client import call_claude_haiku
 from agents.brain import load_system_prompt
 import httpx
 
@@ -181,8 +181,8 @@ Generate a concise analytics report with:
 
     analysis_system = load_system_prompt("analytics", "analyst", _ANALYSIS_FALLBACK)
     try:
-        text = await call_local(prompt, system=analysis_system)
-        return text, "ollama"
+        text = await call_claude_haiku(prompt, system=analysis_system, room="analytics")
+        return text, "haiku"
     except Exception:
         text = await call_claude_haiku(prompt, system=analysis_system, room="analytics")
         return text, "claude"

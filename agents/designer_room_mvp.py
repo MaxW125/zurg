@@ -2,11 +2,12 @@ import os
 import json
 import asyncio
 from datetime import datetime
+from PIL import Image
+import io
 from google import genai
 from google.genai import types
-from rembg import remove as rembg_remove
-from agents.llm_client import call_local, call_claude, call_claude_haiku
-from agents.brain import load_system_prompt
+from agents.llm_client import call_claude, call_claude_haiku
+from agents.brain import load_system_prompt, load_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 IMAGEN_MODEL = "imagen-4.0-fast-generate-001"
@@ -15,14 +16,40 @@ _PROMPT_FALLBACK = """You are a print-on-demand product designer. Given a niche 
 
 Rules:
 - Output ONLY the artwork itself — never show a shirt, clothing, mannequin, model, hanger, or any product mockup
-- ALWAYS end your image prompt with: "flat vector illustration on a pure transparent background, no background, isolated artwork, PNG with transparency"
-- Keep it clean and printable — no complex gradients that won't transfer well
-- Be specific about style: flat illustration, vector art, watercolor, etc.
+- Design must be a fully isolated graphic on a solid bright magenta (#FF00FF) background — no ground, floor, sky, environment, shadows, or scene-setting elements
+- Hard clean edges on the subject — the background remover does a chroma key on the magenta
+- Keep it clean and printable — high contrast, no complex gradients
+- Be specific about style: flat illustration, bold vector art, watercolor, etc.
 - Do NOT include any text or words in the design unless the brief specifically calls for it
-- On the very last line write: SHIRT_COLOR: [best base color for this design — choose from: black, white, navy, heather grey, forest green, red, royal blue]
+- On the very last line write: SHIRT_COLOR: [best base color — choose from: black, white, navy, heather grey, forest green, red, royal blue]
 - Output the image prompt first, then SHIRT_COLOR on a new line. Nothing else."""
 
-TRANSPARENCY_SUFFIX = "flat vector illustration on a pure transparent background, no background, isolated artwork, PNG with transparency"
+TRANSPARENCY_SUFFIX = "isolated graphic on a solid bright magenta (#FF00FF) background, no background scene, no shadows, no environment, clean hard edges, sticker-style artwork"
+CHROMA_KEY = (255, 0, 255)  # magenta — remove this color to make background transparent
+CHROMA_TOLERANCE = 80       # how far from the detected background color a pixel can be and still get removed
+
+
+_COPY_PROMPT_FALLBACK = """Write Etsy product copy for a {PRODUCT_TYPE} in the "{NICHE}" niche.
+
+Design: {DESIGN}
+Target audience: {AUDIENCE}
+Seed keywords: {KEYWORDS}{DENIAL_NOTE}
+
+Return ONLY a valid JSON object with these exact keys:
+- title: compelling Etsy product title, max 140 chars, keyword-rich and specific (e.g. "Funny Dachshund Mom Coffee Mug — Wiener Dog Lover Gift — Dog Mom Cup")
+- description: 2-3 engaging sentences aimed at the niche audience, highlight what makes it special
+- tags: array of exactly 13 Etsy tags, relevant and specific, mix of broad and niche terms, max 20 chars each, no duplicates
+
+Raw JSON only. No explanation."""
+
+_IMAGE_PROMPT_FALLBACK = """Write an image generation prompt for a print-on-demand {PRODUCT_TYPE} design.
+
+Niche: {NICHE}
+Target audience: {AUDIENCE}
+Design direction: {DESIGN_DIRECTION}
+Keywords: {KEYWORDS}{DENIAL_NOTE}
+
+Output only the image prompt."""
 
 
 async def _generate_copy(niche: str, product_type: str, image_prompt: str, target_audience: str, keywords: list, denial_context: str = "") -> dict:
@@ -32,18 +59,16 @@ async def _generate_copy(niche: str, product_type: str, image_prompt: str, targe
         "Address this feedback directly in the new copy."
     ) if denial_context else ""
 
-    prompt = f"""Write Etsy product copy for a {product_type} in the "{niche}" niche.
-
-Design: {image_prompt[:300]}
-Target audience: {target_audience}
-Seed keywords: {', '.join(keywords)}{denial_note}
-
-Return ONLY a valid JSON object with these exact keys:
-- title: compelling Etsy product title, max 140 chars, keyword-rich and specific (e.g. "Funny Dachshund Mom Coffee Mug — Wiener Dog Lover Gift — Dog Mom Cup")
-- description: 2-3 engaging sentences aimed at the niche audience, highlight what makes it special
-- tags: array of exactly 13 Etsy tags, relevant and specific, mix of broad and niche terms, max 20 chars each, no duplicates
-
-Raw JSON only. No explanation."""
+    template = load_prompt("design", "copywriter", _COPY_PROMPT_FALLBACK)
+    prompt = (
+        template
+        .replace("{PRODUCT_TYPE}", product_type)
+        .replace("{NICHE}", niche)
+        .replace("{DESIGN}", image_prompt[:300])
+        .replace("{AUDIENCE}", target_audience)
+        .replace("{KEYWORDS}", ", ".join(keywords))
+        .replace("{DENIAL_NOTE}", denial_note)
+    )
 
     try:
         raw = await call_claude_haiku(prompt, room="design")
@@ -71,14 +96,16 @@ def _build_prompt_request(brief: dict) -> str:
         "Create a new design that directly addresses this feedback. Do not repeat the previous approach."
     ) if denial else ""
 
-    return f"""Write an image generation prompt for a print-on-demand {brief['product_type']} design.
-
-Niche: {brief['niche']}
-Target audience: {brief['target_audience']}
-Design direction: {brief['design_direction']}
-Keywords: {', '.join(brief['keywords'])}{denial_section}
-
-Output only the image prompt."""
+    template = load_prompt("design", "designer", _IMAGE_PROMPT_FALLBACK)
+    return (
+        template
+        .replace("{PRODUCT_TYPE}", brief["product_type"])
+        .replace("{NICHE}", brief["niche"])
+        .replace("{AUDIENCE}", brief.get("target_audience", ""))
+        .replace("{DESIGN_DIRECTION}", brief.get("design_direction", ""))
+        .replace("{KEYWORDS}", ", ".join(brief.get("keywords", [])))
+        .replace("{DENIAL_NOTE}", denial_section)
+    )
 
 
 def _save_image(image_bytes: bytes, slug: str) -> str:
@@ -113,12 +140,7 @@ async def run_designer(input: dict) -> dict:
     # Step 1 — build image prompt via Ollama (fall back to Claude)
     prompt_request = _build_prompt_request(input)
     system = load_system_prompt("design", "designer", _PROMPT_FALLBACK)
-    model_used = "ollama"
-    try:
-        raw_response = await call_local(prompt_request, system=system)
-    except Exception:
-        model_used = "claude"
-        raw_response = await call_claude(prompt_request, system=system, room="design")
+    raw_response = await call_claude(prompt_request, system=system, room="design")
 
     # Parse shirt color recommendation from last line
     shirt_color = "black"
@@ -151,11 +173,59 @@ async def run_designer(input: dict) -> dict:
     response = await asyncio.get_event_loop().run_in_executor(None, _generate)
     raw_bytes = response.generated_images[0].image.image_bytes
 
-    # Step 3 — remove background to get real RGBA transparency
-    # Imagen bakes a white/checkerboard background even when asked for transparency;
-    # rembg cuts the foreground artwork and returns a true alpha-channel PNG.
+    # Step 3 — chroma key removal: sample the four corners to detect whatever
+    # background color Imagen actually rendered, then flood-fill from edges
+    # removing all pixels within tolerance of that color.
     def _remove_bg():
-        return rembg_remove(raw_bytes)
+        img = Image.open(io.BytesIO(raw_bytes)).convert("RGBA")
+        pixels = img.load()
+        w, h = img.size
+
+        # Detect background color from corners
+        corners = [pixels[0,0], pixels[w-1,0], pixels[0,h-1], pixels[w-1,h-1]]
+        cr = sum(c[0] for c in corners) // 4
+        cg = sum(c[1] for c in corners) // 4
+        cb = sum(c[2] for c in corners) // 4
+        print(f"[designer] Background color detected: ({cr}, {cg}, {cb})")
+
+        def is_bg(px):
+            return (abs(px[0]-cr) <= CHROMA_TOLERANCE and
+                    abs(px[1]-cg) <= CHROMA_TOLERANCE and
+                    abs(px[2]-cb) <= CHROMA_TOLERANCE)
+
+        # Flood-fill from all edges so enclosed pockets (e.g. between legs) are also removed
+        from collections import deque
+        visited = [[False]*h for _ in range(w)]
+        queue = deque()
+        for x in range(w):
+            for y in (0, h-1):
+                if not visited[x][y] and is_bg(pixels[x,y]):
+                    visited[x][y] = True
+                    queue.append((x,y))
+        for y in range(h):
+            for x in (0, w-1):
+                if not visited[x][y] and is_bg(pixels[x,y]):
+                    visited[x][y] = True
+                    queue.append((x,y))
+        while queue:
+            x, y = queue.popleft()
+            pixels[x,y] = (pixels[x,y][0], pixels[x,y][1], pixels[x,y][2], 0)
+            for nx, ny in ((x-1,y),(x+1,y),(x,y-1),(x,y+1)):
+                if 0 <= nx < w and 0 <= ny < h and not visited[nx][ny] and is_bg(pixels[nx,ny]):
+                    visited[nx][ny] = True
+                    queue.append((nx,ny))
+
+        # Global pass: remove any remaining background-colored pixels (letter holes,
+        # enclosed counters in A/D/O, any spots the flood-fill couldn't reach from edges)
+        for y in range(h):
+            for x in range(w):
+                px = pixels[x, y]
+                if px[3] > 0 and is_bg(px):
+                    pixels[x, y] = (px[0], px[1], px[2], 0)
+
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return buf.getvalue()
 
     image_bytes = await asyncio.get_event_loop().run_in_executor(None, _remove_bg)
 
@@ -182,5 +252,5 @@ async def run_designer(input: dict) -> dict:
         "title":        copy["title"],
         "description":  copy["description"],
         "tags":         copy["tags"],
-        "model_used":   model_used,
+        "model_used":   "claude",
     }

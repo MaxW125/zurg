@@ -1,6 +1,6 @@
 import os
 import json
-from agents.llm_client import call_local, call_claude_haiku, call_local_stream, call_claude_stream
+from agents.llm_client import call_claude_haiku, call_claude_stream
 from agents.brain import load_system_prompt
 
 BRAIN_PATH      = os.getenv("BRAIN_PATH", "./brain")
@@ -51,9 +51,9 @@ def _load_identity() -> str:
 
 
 async def _classify_intent(message: str) -> str:
-    """Use Ollama to classify the owner's intent. Falls back to 'chat' on failure."""
+    """Classify the owner's intent via Haiku."""
     try:
-        raw = await call_local(message, system=INTENT_SYSTEM)
+        raw = await call_claude_haiku(message, system=INTENT_SYSTEM, room="ceo")
         data = json.loads(raw)
         return data.get("intent", "chat")
     except Exception:
@@ -67,12 +67,8 @@ async def chat_stream(message: str):
     Yields text chunks.
     """
     identity = _load_identity()
-    try:
-        async for chunk in call_local_stream(message, system=identity):
-            yield chunk
-    except Exception:
-        async for chunk in call_claude_stream(message, system=identity):
-            yield chunk
+    async for chunk in call_claude_stream(message, system=identity):
+        yield chunk
 
 
 async def run_ceo(input: dict) -> dict:
@@ -100,12 +96,7 @@ async def run_ceo(input: dict) -> dict:
 You understood their intent as: {intent}
 Write a short 1-sentence acknowledgement of what you're about to do."""
 
-    model_used = "ollama"
-    try:
-        ack = await call_local(ack_prompt, system=identity)
-    except Exception:
-        model_used = "claude"
-        ack = await call_claude_haiku(ack_prompt, system=identity, room="ceo")
+    ack = await call_claude_haiku(ack_prompt, system=identity, room="ceo")
 
     # Delegate based on intent
     data = {}
@@ -116,7 +107,7 @@ Write a short 1-sentence acknowledgement of what you're about to do."""
         # Extract the actual niche topic from the conversational message
         extract_prompt = f'Extract the niche or product topic from this message: "{message}"\nOutput only 2-5 words describing the topic. No punctuation, no explanation.'
         try:
-            direction = (await call_local(extract_prompt, system="Output only the niche topic, 2-5 words max. Nothing else.")).strip()
+            direction = (await call_claude_haiku(extract_prompt, system="Output only the niche topic, 2-5 words max. Nothing else.", room="ceo")).strip()
         except Exception:
             direction = input.get("direction", message)
 
@@ -142,10 +133,7 @@ Write a short 1-sentence acknowledgement of what you're about to do."""
             summary_prompt = f"""Design complete. Image saved at: {data['image_path']}
 Niche: {data['niche']} | Product: {data['product_type']}
 Write 1 sentence telling the owner the design is ready and asking them to approve or reject it. You are the CEO — the Designer agent did this work, not you."""
-            try:
-                response = await call_local(summary_prompt, system=identity)
-            except Exception:
-                response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
+            response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
 
     elif intent == "pipeline":
         from agents.researcher_room_mvp import run_researcher
@@ -160,10 +148,7 @@ Write 1 sentence telling the owner the design is ready and asking them to approv
 Niche: {brief['niche']} | Product: {brief['product_type']}
 Design saved at: {data['image_path']}
 Write 2 sentences: summarise the niche the Researcher found, then tell the owner the Designer has a design ready for approval. You are the CEO — speak as the boss who delegated, not the one who did the work."""
-        try:
-            response = await call_local(summary_prompt, system=identity)
-        except Exception:
-            response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
+        response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
 
     elif intent == "publish":
         design = input.get("design", {})
@@ -176,10 +161,7 @@ Write 2 sentences: summarise the niche the Researcher found, then tell the owner
 Title: {data['title']}
 URL: {data['product_url']}
 Write 1 sentence confirming the Factory agent got the product live and share the admin URL. You are the CEO — speak as the boss who delegated, not the one who did the work."""
-            try:
-                response = await call_local(summary_prompt, system=identity)
-            except Exception:
-                response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
+            response = await call_claude_haiku(summary_prompt, system=identity, room="ceo")
 
     elif intent == "set_reporting":
         mode = "weekly" if any(w in message.lower() for w in ["weekly", "week"]) else "daily"
@@ -188,17 +170,10 @@ Write 1 sentence confirming the Factory agent got the product live and share the
         with open(config_path, "w") as f:
             json.dump({"mode": mode}, f)
         confirm_prompt = f'You just switched the owner\'s briefing mode to "{mode}" reports. Write 1 sentence confirming this change in your own voice.'
-        try:
-            response = await call_local(confirm_prompt, system=identity)
-        except Exception:
-            response = await call_claude_haiku(confirm_prompt, system=identity, room="ceo")
+        response = await call_claude_haiku(confirm_prompt, system=identity, room="ceo")
 
     else:
-        # General chat
-        try:
-            response = await call_local(message, system=identity)
-        except Exception:
-            response = await call_claude_haiku(message, system=identity, room="ceo")
+        response = await call_claude_haiku(message, system=identity, room="ceo")
 
     return {
         "intent": intent,
@@ -206,5 +181,5 @@ Write 1 sentence confirming the Factory agent got the product live and share the
         "response": response,
         "data": data,
         "awaiting_approval": awaiting_approval,
-        "model_used": model_used,
+        "model_used": "haiku",
     }

@@ -84,7 +84,16 @@ async def get_latest_design():
 @router.post("/design/run")
 async def run_design_room(body: DesignInput):
     """Trigger the Designer agent directly."""
-    result = await run_designer(body.model_dump())
+    try:
+        result = await run_designer(body.model_dump())
+    except Exception as e:
+        await notify(
+            f"❌ Designer failed for: {body.niche} — {body.product_type}\n"
+            f"Error: {str(e)[:200]}\n"
+            "Check logs: ~/zurg/logs/server.log"
+        )
+        raise
+
     brain = os.getenv("BRAIN_PATH", "./brain")
     path = os.path.join(brain, "rooms", "captain", "last_design.json")
     try:
@@ -92,11 +101,38 @@ async def run_design_room(body: DesignInput):
             json.dump(result, f, indent=2)
     except Exception:
         pass
-    redesign_note = " (redesign)" if body.denial_context else ""
-    await notify(
-        f"🎨 Design ready{redesign_note}: {result['niche']} — {result['product_type']}\n"
-        "Open the Approval Room to approve or deny."
-    )
+
+    # Route to auto-approve if we have enough verdict history (Phase 2+)
+    from agents.approval_room_mvp import auto_decide, _load_verdict_history
+    all_verdicts = _load_verdict_history()
+    verdict_count = sum(1 for v in all_verdicts if v.get("source", "manual") == "manual")
+
+    if verdict_count >= 100:
+        # Autonomous mode — agent decides, no text to owner
+        decision = await auto_decide(result)
+        if decision["approved"]:
+            from agents.factory_room_mvp import run_factory
+            try:
+                product = await run_factory(result)
+                await notify(
+                    f"✅ Auto-approved & published: {product['title']}\n"
+                    f"Shopify: {product['product_url']}"
+                )
+            except Exception as e:
+                await notify(f"⚠️ Auto-approved but factory failed for {result['niche']}: {str(e)[:120]}")
+        else:
+            await notify(
+                f"❌ Auto-rejected: {result['niche']} — {result['product_type']}\n"
+                f"Reason: {decision['reasoning'][:120]}"
+            )
+    else:
+        # Manual mode — text owner to open Approval Room
+        redesign_note = " (redesign)" if body.denial_context else ""
+        await notify(
+            f"🎨 Design ready{redesign_note}: {result['niche']} — {result['product_type']}\n"
+            "Open the Approval Room to approve or deny."
+        )
+
     return result
 
 

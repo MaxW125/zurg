@@ -23,31 +23,66 @@ DDG_QUERIES = [
     "most profitable print on demand shirt themes passionate communities",
 ]
 
-# Two search terms per product type — broad enough to surface niches organically,
-# anchored to products we can actually make via Printify.
-_ETSY_MARKET_QUERIES = [
-    # Apparel (T-Shirt, Hoodie, Long Sleeve, Sweatshirt)
+# Static fallback — used if the dynamic query generation fails.
+_ETSY_MARKET_QUERIES_FALLBACK = [
     ("funny graphic tee gift",          "Apparel"),
     ("hobby niche sweatshirt gift",     "Apparel"),
-    # Ceramic Mug
     ("funny coffee mug gift",           "Ceramic Mug"),
     ("novelty mug gift idea",           "Ceramic Mug"),
-    # Tote Bag
     ("canvas tote bag gift",            "Tote Bag"),
     ("book lover tote bag",             "Tote Bag"),
-    # Poster
     ("wall art print home decor",       "Poster"),
     ("motivational poster gift",        "Poster"),
-    # Tough Phone Case
     ("funny phone case gift",           "Tough Phone Case"),
     ("cute niche phone case",           "Tough Phone Case"),
-    # Cotton Apron
     ("funny apron gift kitchen",        "Cotton Apron"),
     ("novelty cooking apron gift",      "Cotton Apron"),
-    # Throw Pillow
     ("funny throw pillow home decor",   "Throw Pillow"),
     ("decorative pillow gift niche",    "Throw Pillow"),
 ]
+
+
+async def _generate_search_queries() -> list[tuple[str, str]]:
+    """Ask Haiku to generate fresh, seasonally-aware Etsy search terms each run.
+    Falls back to the static list if the call fails or returns bad JSON."""
+    today = datetime.now().strftime("%B %d, %Y")
+    prompt = f"""Today is {today}. You are helping a print-on-demand Etsy store find trending niches.
+
+Generate 2 Etsy search queries for EACH of these product types:
+- Apparel (T-Shirt, Hoodie, Sweatshirt)
+- Ceramic Mug
+- Tote Bag
+- Poster
+- Tough Phone Case
+- Cotton Apron
+- Throw Pillow
+
+Each query must be 3-6 words that would surface listings that are:
+- Relevant to the current season or upcoming events (it's {today})
+- Gift-purchase motivated (birthdays, holidays, "gift for X")
+- Specific to a passionate niche community (dog moms, nurses, gamers, etc.)
+
+Vary the niches across product types — don't repeat the same community twice.
+
+Return ONLY a JSON array of 14 objects with "keyword" and "product_type" keys:
+[{{"keyword": "funny dog mom shirt", "product_type": "Apparel"}}, ...]
+
+Raw JSON only. No explanation."""
+
+    try:
+        import json
+        from agents.llm_client import call_claude_haiku
+        raw = await call_claude_haiku(prompt, room="market_intel")
+        raw = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        data = json.loads(raw)
+        queries = [(item["keyword"], item["product_type"]) for item in data if "keyword" in item and "product_type" in item]
+        if len(queries) >= 7:  # at least one per product type
+            print(f"[market_intel] Generated {len(queries)} dynamic search queries")
+            return queries
+        print(f"[market_intel] Dynamic queries too few ({len(queries)}) — using fallback")
+    except Exception as e:
+        print(f"[market_intel] Dynamic query generation failed: {e} — using fallback")
+    return _ETSY_MARKET_QUERIES_FALLBACK
 
 
 # ── Everbee ────────────────────────────────────────────────────
@@ -134,9 +169,9 @@ def _fetch_everbee() -> str:
 
 # ── Etsy API ──────────────────────────────────────────────────
 
-def _fetch_etsy_market() -> str:
-    """Search public Etsy listings anchored to our 10 product types.
-    Samples 6 queries, collects all listings, aggregates by favorites,
+def _fetch_etsy_market(queries: list[tuple[str, str]]) -> str:
+    """Search public Etsy listings using the provided queries.
+    Samples 6 from the list, collects all listings, aggregates by favorites,
     and returns a synthesised summary of trending tags and top listings."""
     api_key = os.getenv("ETSY_API_KEY", "")
     secret  = os.getenv("ETSY_SHARED_SECRET", "")
@@ -145,7 +180,7 @@ def _fetch_etsy_market() -> str:
 
     import random
     from collections import Counter
-    queries = random.sample(_ETSY_MARKET_QUERIES, min(6, len(_ETSY_MARKET_QUERIES)))
+    queries = random.sample(queries, min(6, len(queries)))
 
     headers  = {"x-api-key": f"{api_key}:{secret}"}
     all_listings: list[dict] = []
@@ -275,7 +310,8 @@ async def gather_trends() -> str:
         return result
 
     print("[market_intel] Everbee unavailable — trying Etsy API")
-    result = await loop.run_in_executor(None, _fetch_etsy_market)
+    queries = await _generate_search_queries()
+    result = await loop.run_in_executor(None, _fetch_etsy_market, queries)
     if result:
         print("[market_intel] Using Etsy API data")
         return result

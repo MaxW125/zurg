@@ -4,7 +4,7 @@ import re
 import asyncio
 import httpx
 from datetime import datetime, timezone
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_claude
 from agents.market_intel import gather_trends, get_seasonal_context
 from agents.product_catalog import PRODUCT_TYPES
 from agents.brain import load_system_prompt
@@ -182,13 +182,7 @@ Return the JSON brief."""
     system = load_system_prompt("research", "researcher", _SYSTEM_FALLBACK).replace(
         "{PRODUCT_TYPES}", ", ".join(f'"{p}"' for p in PRODUCT_TYPES)
     )
-    model_used = "ollama"
-    raw = ""
-    try:
-        raw = await call_local(prompt, system=system)
-    except Exception:
-        model_used = "claude"
-        raw = await call_claude(prompt, system=system, room="research")
+    raw = await call_claude(prompt, system=system, room="research")
 
     brief = _parse_brief(raw)
     brief_path = _save_brief(brief)
@@ -200,7 +194,7 @@ Return the JSON brief."""
         "keywords":         brief["keywords"],
         "design_direction": brief["design_direction"],
         "brief_path":       brief_path,
-        "model_used":       model_used,
+        "model_used":       "claude",
     }
 
 

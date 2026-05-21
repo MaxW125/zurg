@@ -1,6 +1,6 @@
 import os
 import glob
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
@@ -16,20 +16,22 @@ Rules:
 - Output 2-3 sentences maximum"""
 
 _AUTO_DECIDE_FALLBACK = """You are the Approval Agent for a print-on-demand business operating in autonomous mode.
-You must make a binary approve/reject decision on each design based on the owner's taste history.
+You must make a binary approve/reject decision on each design based solely on the owner's verdict history.
 
 Rules:
-- Study the verdict history carefully — approve designs similar to past approvals, reject those similar to past rejections
-- With no history, approve by default (owner can always reject manually later)
+- Study the verdict history carefully — your job is to replicate the owner's taste, not your own
+- Approve designs similar in niche, style, and product type to past approvals
+- Reject designs similar to past rejections, or that repeat the same feedback patterns
+- If verdict history is thin (under 20), lean toward approving — the owner can correct you
 - Be decisive — no hedging
 - Output MUST start with exactly one of these lines:
   DECISION: APPROVE
   DECISION: REJECT
-- Follow immediately with REASONING: and 1-2 sentences explaining your decision"""
+- Follow immediately with REASONING: and 1-2 sentences grounded in the verdict history"""
 
 
 def _load_verdict_history() -> list[dict]:
-    """Load all verdict files from brain/approvals/."""
+    """Load all verdict files from the approval vault."""
     approvals_dir = os.path.join(BRAIN_PATH, "rooms", "approval", "verdicts")
     if not os.path.isdir(approvals_dir):
         return []
@@ -43,11 +45,19 @@ def _load_verdict_history() -> list[dict]:
             verdict: dict = {
                 "approved": "# Verdict: approved" in (lines[0] if lines else ""),
                 "niche": "",
+                "product_type": "",
+                "title": "",
                 "feedback": "",
             }
             for line in lines:
                 if line.startswith("Niche:"):
                     verdict["niche"] = line.replace("Niche:", "").strip()
+                elif line.startswith("Product:"):
+                    verdict["product_type"] = line.replace("Product:", "").strip()
+                elif line.startswith("Title:"):
+                    verdict["title"] = line.replace("Title:", "").strip()
+                elif line.startswith("Source:"):
+                    verdict["source"] = line.replace("Source:", "").strip()
             if "## Owner Feedback" in content:
                 feedback_section = content.split("## Owner Feedback", 1)[1]
                 verdict["feedback"] = feedback_section.split("##")[0].strip()
@@ -58,25 +68,30 @@ def _load_verdict_history() -> list[dict]:
     return verdicts
 
 
-def _build_analysis_prompt(design: dict, verdicts: list[dict]) -> str:
+def _build_history_context(verdicts: list[dict], recent_count: int = 5) -> str:
     verdict_count = len(verdicts)
     approved_count = sum(1 for v in verdicts if v["approved"])
     rejected_count = verdict_count - approved_count
 
     if verdict_count == 0:
-        history_context = "No verdict history yet — this is the first design you've reviewed."
-    else:
-        recent = verdicts[-5:]
-        history_lines = []
-        for v in recent:
-            status = "APPROVED" if v["approved"] else "REJECTED"
-            feedback = v["feedback"][:100] if v["feedback"] else "(no feedback)"
-            history_lines.append(f"  [{status}] {v['niche']} — \"{feedback}\"")
-        history_context = (
-            f"Verdict history: {approved_count} approved, {rejected_count} rejected "
-            f"out of {verdict_count} total.\n\nRecent verdicts:\n" + "\n".join(history_lines)
-        )
+        return "No verdict history yet — this is the first design reviewed."
 
+    recent = verdicts[-recent_count:]
+    history_lines = []
+    for v in recent:
+        status = "APPROVED" if v["approved"] else "REJECTED"
+        feedback = v["feedback"][:120] if v["feedback"] else "(no feedback)"
+        product = v.get("product_type", "")
+        history_lines.append(f"  [{status}] {v['niche']} — {product} — \"{feedback}\"")
+
+    return (
+        f"Verdict history: {approved_count} approved, {rejected_count} rejected "
+        f"out of {verdict_count} total.\n\nRecent verdicts:\n" + "\n".join(history_lines)
+    )
+
+
+def _build_analysis_prompt(design: dict, verdicts: list[dict], recent_count: int = 5) -> str:
+    history_context = _build_history_context(verdicts, recent_count)
     return f"""Evaluate this design for the owner's approval decision.
 
 Design details:
@@ -92,71 +107,50 @@ Give a 2-3 sentence assessment. Be specific. Reference past verdicts if relevant
 async def analyze_design(design: dict) -> dict:
     """
     Phase 1 analysis: load verdict history, generate a brief assessment of the design.
-
-    Returns:
-      - analysis: the agent's text assessment
-      - verdict_count: how many verdicts have been collected
-      - phase: 1, 2, or 3
-      - model_used: which LLM generated the analysis
+    Shown to the owner in the Approval Room panel before they decide.
     """
     verdicts = _load_verdict_history()
     verdict_count = len(verdicts)
     phase = 1 if verdict_count < 100 else (2 if verdict_count < 200 else 3)
 
-    prompt = _build_analysis_prompt(design, verdicts)
+    prompt = _build_analysis_prompt(design, verdicts, recent_count=5)
     analysis_system = load_system_prompt("approval", "approval", _ANALYSIS_FALLBACK)
-    model_used = "ollama"
-    try:
-        analysis = await call_local(prompt, system=analysis_system)
-    except Exception:
-        model_used = "claude"
-        analysis = await call_claude(prompt, system=analysis_system, room="approval")
+    analysis = await call_claude(prompt, system=analysis_system, room="approval")
 
     return {
         "analysis": analysis,
         "verdict_count": verdict_count,
         "phase": phase,
-        "model_used": model_used,
+        "model_used": "claude",
     }
 
 
 async def auto_decide(design: dict) -> dict:
     """
     Autonomous mode: agent makes the approve/reject call without owner input.
-    Parses a structured DECISION: APPROVE/REJECT response from the LLM.
-
-    Returns:
-      - approved: bool
-      - reasoning: the agent's explanation
-      - verdict_count: how many past verdicts informed the decision
-      - model_used
+    Uses the last 25 verdicts so the decision is grounded in recent taste signals.
     """
-    verdicts = _load_verdict_history()
+    all_verdicts = _load_verdict_history()
+    # Only train on manual verdicts — auto verdicts can compound errors over time
+    verdicts = [v for v in all_verdicts if v.get("source", "manual") == "manual"]
     verdict_count = len(verdicts)
 
-    prompt = _build_analysis_prompt(design, verdicts).replace(
+    prompt = _build_analysis_prompt(design, verdicts, recent_count=len(verdicts)).replace(
         "Give a 2-3 sentence assessment. Be specific. Reference past verdicts if relevant.",
         "Make an approve/reject decision. Start with DECISION: APPROVE or DECISION: REJECT, "
-        "then REASONING: followed by 1-2 sentences.",
+        "then REASONING: followed by 1-2 sentences grounded in the verdict history.",
     )
 
     auto_decide_system = load_system_prompt("approval", "approval", _AUTO_DECIDE_FALLBACK)
-    model_used = "ollama"
-    try:
-        raw = await call_local(prompt, system=auto_decide_system)
-    except Exception:
-        model_used = "claude"
-        raw = await call_claude(prompt, system=auto_decide_system, room="approval")
+    raw = await call_claude(prompt, system=auto_decide_system, room="approval")
 
-    # Parse structured output
-    approved = True  # default to approve if parsing fails
+    approved = True  # default approve if parsing fails
     reasoning = raw.strip()
 
     for line in raw.splitlines():
         line = line.strip()
         if line.upper().startswith("DECISION:"):
-            decision_word = line.split(":", 1)[1].strip().upper()
-            approved = decision_word == "APPROVE"
+            approved = line.split(":", 1)[1].strip().upper() == "APPROVE"
         if line.upper().startswith("REASONING:"):
             reasoning = line.split(":", 1)[1].strip()
 
@@ -164,5 +158,5 @@ async def auto_decide(design: dict) -> dict:
         "approved": approved,
         "reasoning": reasoning,
         "verdict_count": verdict_count,
-        "model_used": model_used,
+        "model_used": "claude",
     }

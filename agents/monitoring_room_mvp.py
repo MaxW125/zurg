@@ -11,7 +11,6 @@ MONITORING_DIR = os.path.join(BRAIN_PATH, "rooms", "monitoring", "reports")
 SHOPIFY_ACCESS_TOKEN    = os.getenv("SHOPIFY_ACCESS_TOKEN", "")
 SHOPIFY_STORE_URL       = os.getenv("SHOPIFY_STORE_URL", "")
 ANTHROPIC_API_KEY       = os.getenv("ANTHROPIC_API_KEY", "")
-OLLAMA_HOST             = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 PRINTIFY_API_TOKEN      = os.getenv("PRINTIFY_API_TOKEN", "")
 PRINTIFY_ETSY_SHOP_ID   = os.getenv("PRINTIFY_ETSY_SHOP_ID", "")
 ETSY_API_KEY            = os.getenv("ETSY_API_KEY", "")
@@ -101,34 +100,34 @@ async def _check_printify_etsy() -> dict:
         return {"status": "yellow", "detail": "PRINTIFY_API_TOKEN not set"}
     if not PRINTIFY_ETSY_SHOP_ID:
         return {"status": "yellow", "detail": "PRINTIFY_ETSY_SHOP_ID not set — Etsy channel not configured"}
+    headers = {"Authorization": f"Bearer {PRINTIFY_API_TOKEN}"}
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                "https://api.printify.com/v1/shops.json",
-                headers={"Authorization": f"Bearer {PRINTIFY_API_TOKEN}"},
+        async with httpx.AsyncClient(timeout=15) as client:
+            # Step 1: verify shop exists in Printify
+            r = await client.get("https://api.printify.com/v1/shops.json", headers=headers)
+            if r.status_code != 200:
+                return {"status": "yellow", "detail": f"Printify API HTTP {r.status_code}"}
+            shops = r.json()
+            etsy_shop = next((s for s in shops if str(s.get("id")) == PRINTIFY_ETSY_SHOP_ID), None)
+            if not etsy_shop:
+                return {"status": "red", "detail": f"Etsy shop {PRINTIFY_ETSY_SHOP_ID} not found in Printify — reconnect in dashboard"}
+
+            # Step 2: probe the Etsy shop's product list — a 500 here means OAuth is broken
+            probe = await client.get(
+                f"https://api.printify.com/v1/shops/{PRINTIFY_ETSY_SHOP_ID}/products.json?limit=1",
+                headers=headers,
             )
-        if r.status_code != 200:
-            return {"status": "yellow", "detail": f"Printify API HTTP {r.status_code}"}
-        shops = r.json()
-        etsy_shop = next((s for s in shops if str(s.get("id")) == PRINTIFY_ETSY_SHOP_ID), None)
-        if not etsy_shop:
-            return {"status": "red", "detail": f"Etsy shop {PRINTIFY_ETSY_SHOP_ID} not found in Printify — reconnect in dashboard"}
-        return {"status": "green", "detail": f"Connected — {etsy_shop.get('title', 'Etsy store')}"}
+            if probe.status_code == 500:
+                return {
+                    "status": "red",
+                    "detail": "Etsy OAuth broken — reconnect at printify.com → Stores → KrakenAndCoDesigns",
+                }
+            if probe.status_code not in (200, 204):
+                return {"status": "yellow", "detail": f"Etsy shop probe HTTP {probe.status_code}"}
+
+        return {"status": "green", "detail": f"OAuth live — {etsy_shop.get('title', 'Etsy store')}"}
     except Exception as e:
         return {"status": "red", "detail": f"Connection failed: {str(e)[:80]}"}
-
-
-async def _check_ollama() -> dict:
-    try:
-        async with httpx.AsyncClient(timeout=5) as client:
-            r = await client.get(f"{OLLAMA_HOST}/api/tags")
-        if r.status_code == 200:
-            models = [m.get("name", "") for m in r.json().get("models", [])]
-            label = ", ".join(models[:3]) if models else "running (no models)"
-            return {"status": "green", "detail": f"Running — {label}"}
-        return {"status": "yellow", "detail": f"HTTP {r.status_code}"}
-    except Exception:
-        return {"status": "yellow", "detail": "Ollama not reachable — Claude fallback will be used"}
 
 
 def _check_room_report(room_key: str, room_name: str) -> dict:
@@ -223,10 +222,9 @@ async def get_latest_report() -> dict | None:
 
 
 async def run_monitoring() -> dict:
-    shopify, anthropic, ollama, printify_etsy, etsy_api = await asyncio.gather(
+    shopify, anthropic, printify_etsy, etsy_api = await asyncio.gather(
         _check_shopify(),
         _check_anthropic(),
-        _check_ollama(),
         _check_printify_etsy(),
         _check_etsy_api(),
     )
@@ -237,7 +235,6 @@ async def run_monitoring() -> dict:
         {"name": "Printify Etsy",    "key": "printify_etsy", **printify_etsy},
         {"name": "Etsy API",         "key": "etsy_api",      **etsy_api},
         {"name": "Anthropic API",    "key": "anthropic",     **anthropic},
-        {"name": "Ollama",           "key": "ollama",        **ollama},
     ]
 
     for room_key, room_name in _BUILT_ROOMS:

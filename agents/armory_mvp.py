@@ -2,7 +2,7 @@ import os
 import json
 import re
 from datetime import datetime
-from agents.llm_client import call_local, call_claude
+from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
@@ -151,8 +151,7 @@ Rationale: {proposal.get('rationale', '')}
 Write the complete SKILL.md content. Output only the file content — nothing else."""
 
     try:
-        content = await call_local(prompt, system=system)
-        model_used = "ollama"
+        content = await call_claude(prompt, system=system, room="armory")
     except Exception:
         content = await call_claude(prompt, system=system, room="armory")
         model_used = "claude"

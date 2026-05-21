@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime, timezone, timedelta
-from agents.llm_client import call_local, call_claude_haiku
+from agents.llm_client import call_claude_haiku
 from agents.brain import load_system_prompt
 import httpx
 
@@ -159,8 +159,8 @@ Format your response EXACTLY like this (one block per order, nothing else):
 <review request message here>"""
 
     try:
-        raw = await call_local(prompt, system=system)
-        model_used = "ollama"
+        raw = await call_claude_haiku(prompt, system=system, room="cs")
+        model_used = "haiku"
     except Exception:
         raw = await call_claude_haiku(prompt, system=system, room="cs")
         model_used = "claude"

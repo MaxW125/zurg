@@ -112,14 +112,21 @@ async def create_product(
     if not variants:
         raise RuntimeError(f"No variants found for blueprint {blueprint_id} / provider {print_provider_id}")
 
-    # Variants come back grouped by color (e.g. all "Carolina Blue / S/M/L..." first).
-    # Taking the first 50 naively risks excluding the preferred color entirely.
-    # Fix: group by color, put the preferred color first, then fill to 50.
+    # Variants come back in two formats: "Color / Size" (most apparel) or "Size / Color"
+    # (some Gildan blueprints). Detect by checking if the first segment is a size abbreviation.
+    _SIZES = {"xs", "s", "m", "l", "xl", "2xl", "3xl", "4xl", "xxl", "s/m", "m/l", "one size"}
     from collections import defaultdict
     color_groups: dict[str, list] = defaultdict(list)
     for v in variants:
         vtitle = v.get("title", "")
-        color_key = vtitle.split(" / ")[0].strip().lower() if " / " in vtitle else vtitle.lower()
+        parts = vtitle.split(" / ", 1)
+        if len(parts) == 2 and parts[0].strip().lower() in _SIZES:
+            # "Size / Color" format — color is the second segment
+            color_key = parts[1].strip().lower()
+        elif len(parts) == 2:
+            color_key = parts[0].strip().lower()
+        else:
+            color_key = vtitle.lower()
         color_groups[color_key].append(v)
 
     preferred_key = preferred_color.lower()
@@ -262,7 +269,12 @@ async def publish_product(printify_product_id: str, shop_id: str | None = None) 
             headers=_headers(),
         )
         r.raise_for_status()
-        return r.json()
+        result = r.json()
+        if not result:
+            # Printify returns {} on a successful Etsy publish (normal).
+            # For Shopify, {} means the shop is disconnected — will show "Publishing error" in Printify UI.
+            print(f"[PRINTIFY] publish returned empty (normal for Etsy; means disconnected for Shopify)")
+        return result
 
 
 async def get_product(printify_product_id: str, shop_id: str | None = None) -> dict:

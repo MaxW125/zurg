@@ -87,12 +87,9 @@ async def instruct_ceo(body: InstructMessage, background_tasks: BackgroundTasks)
     # Cron briefings bypass intent classification — go straight to LLM with the prompt
     if body.source in ("cron_briefing", "cron_accumulate", "cron_alert"):
         from agents.ceo_room_mvp import _load_identity
-        from agents.llm_client import call_local, call_claude
+        from agents.llm_client import call_claude_haiku
         identity = _load_identity()
-        try:
-            response = await call_local(body.message, system=identity)
-        except Exception:
-            response = await call_claude(body.message, system=identity, room="ceo")
+        response = await call_claude_haiku(body.message, system=identity, room="ceo")
         _save_message("zurg", response, source=body.source)
         return {"response": response, "intent": "cron", "data": {}, "awaiting_approval": False}
 
