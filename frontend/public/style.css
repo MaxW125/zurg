@@ -104,7 +104,7 @@ header {
 }
 
 #map-viewport.panel-open {
-  height: calc(100vh - 44px - 48vh);
+  height: calc(100vh - 44px - 55vh);
 }
 
 #map-viewport.dragging {
@@ -312,7 +312,7 @@ header {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 48vh;
+  height: 55vh;
   background: var(--panel-bg);
   border-top: 3px solid var(--border);
   transform: translateY(100%);
@@ -497,17 +497,17 @@ header {
 }
 
 .panel-section-title {
-  font-size: 7px;
+  font-size: 9px;
   color: var(--purple-lt);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
   letter-spacing: 1px;
 }
 
 .brief-field {
-  font-size: 7px;
+  font-size: 9px;
   color: var(--text);
-  line-height: 2;
-  margin-bottom: 4px;
+  line-height: 2.2;
+  margin-bottom: 6px;
 }
 
 .brief-field span { color: var(--yellow); }
@@ -521,7 +521,7 @@ header {
 .text-input {
   flex: 1;
   font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
+  font-size: 9px;
   background: #0a0618;
   border: 2px solid var(--purple);
   color: var(--text);
@@ -533,7 +533,7 @@ header {
 
 .design-preview {
   width: 100%;
-  max-height: 200px;
+  max-height: 260px;
   object-fit: contain;
   border: 2px solid var(--purple);
   image-rendering: pixelated;
@@ -549,7 +549,7 @@ header {
 .approval-buttons .btn { flex: 1; text-align: center; }
 
 .product-link {
-  font-size: 7px;
+  font-size: 8px;
   color: var(--green);
   word-break: break-all;
   line-height: 2;
@@ -558,7 +558,7 @@ header {
 .product-link a { color: var(--green); }
 
 .empty-state {
-  font-size: 7px;
+  font-size: 9px;
   color: var(--text-dim);
   text-align: center;
   padding: 16px;
@@ -568,15 +568,15 @@ header {
 .feedback-input {
   width: 100%;
   font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
+  font-size: 9px;
   background: #0a0618;
   border: 2px solid var(--purple);
   color: var(--text);
-  padding: 8px;
+  padding: 10px;
   outline: none;
   resize: vertical;
-  min-height: 60px;
-  line-height: 1.8;
+  min-height: 70px;
+  line-height: 2;
   margin-bottom: 10px;
 }
 
@@ -590,10 +590,10 @@ header {
 }
 
 .verdict-entry {
-  font-size: 6px;
-  padding: 6px 8px;
+  font-size: 8px;
+  padding: 8px 10px;
   border: 1px solid;
-  line-height: 1.8;
+  line-height: 2;
 }
 
 .verdict-entry.approved {
@@ -655,3 +655,162 @@ header {
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--purple); }
+
+/* ── Room Backgrounds — Themed CSS ──────────────────────────── */
+
+/* Factory Room — orange industrial */
+.factory-bg {
+  background:
+    radial-gradient(ellipse at 50% 35%, rgba(255,107,53,0.22) 0%, transparent 65%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 47px, rgba(42,18,0,0.45) 47px, rgba(42,18,0,0.45) 48px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 47px, rgba(42,18,0,0.45) 47px, rgba(42,18,0,0.45) 48px);
+  background-color: #150a00;
+}
+
+/* Approval Room — green judicial */
+.approval-bg {
+  background:
+    radial-gradient(ellipse at 50% 35%, rgba(0,255,136,0.14) 0%, transparent 60%),
+    repeating-linear-gradient(45deg, #061209 0px, #061209 22px, #0c2212 22px, #0c2212 24px);
+  background-color: #010d04;
+}
+
+/* Analytics Room — gold data grid */
+.analytics-bg {
+  background-color: #020509;
+  background-image:
+    radial-gradient(ellipse at 50% 40%, rgba(255,215,0,0.14) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, rgba(26,10,46,0.55) 0px, transparent 0px, transparent 31px, rgba(26,10,46,0.55) 31px, rgba(26,10,46,0.55) 32px),
+    repeating-linear-gradient(90deg, rgba(26,10,46,0.55) 0px, transparent 0px, transparent 31px, rgba(26,10,46,0.55) 31px, rgba(26,10,46,0.55) 32px);
+}
+
+/* Pricing Room — amber financial */
+#room-pricing {
+  background-color: #0a0700;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(217,119,6,0.24) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 47px, rgba(42,28,0,0.45) 47px, rgba(42,28,0,0.45) 48px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 47px, rgba(42,28,0,0.45) 47px, rgba(42,28,0,0.45) 48px);
+}
+
+/* CS Room — teal support */
+#room-cs {
+  background-color: #00080f;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(6,182,212,0.20) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 47px, rgba(0,20,35,0.5) 47px, rgba(0,20,35,0.5) 48px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 47px, rgba(0,20,35,0.5) 47px, rgba(0,20,35,0.5) 48px);
+}
+
+/* Shop Health Room — medical green */
+#room-shophealth {
+  background-color: #020f04;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(34,197,94,0.16) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 47px, rgba(2,20,6,0.5) 47px, rgba(2,20,6,0.5) 48px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 47px, rgba(2,20,6,0.5) 47px, rgba(2,20,6,0.5) 48px);
+}
+
+/* War Room — crimson military */
+#room-warroom {
+  background-color: #0f0002;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(239,68,68,0.22) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 47px, rgba(30,0,4,0.5) 47px, rgba(30,0,4,0.5) 48px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 47px, rgba(30,0,4,0.5) 47px, rgba(30,0,4,0.5) 48px);
+}
+
+/* Monitoring Room — electric cyan circuit */
+#room-monitoring {
+  background-color: #000f10;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(0,229,255,0.18) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 31px, rgba(0,30,35,0.55) 31px, rgba(0,30,35,0.55) 32px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 31px, rgba(0,30,35,0.55) 31px, rgba(0,30,35,0.55) 32px);
+}
+
+/* Media Bay — pink/fuchsia social */
+#room-mediabay {
+  background-color: #0f0008;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(236,72,153,0.20) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 47px, rgba(30,0,20,0.5) 47px, rgba(30,0,20,0.5) 48px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 47px, rgba(30,0,20,0.5) 47px, rgba(30,0,20,0.5) 48px);
+}
+
+/* Armory — steel gray */
+#room-armory {
+  background-color: #070809;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(107,114,128,0.24) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 47px, rgba(15,18,22,0.6) 47px, rgba(15,18,22,0.6) 48px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 47px, rgba(15,18,22,0.6) 47px, rgba(15,18,22,0.6) 48px);
+}
+
+/* Radar Bay — navy radar rings */
+#room-radarbay {
+  background-color: #000511;
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(59,130,246,0.16) 0%, rgba(59,130,246,0.06) 30%, transparent 65%),
+    radial-gradient(circle at 50% 50%, transparent 19%, rgba(59,130,246,0.10) 20%, transparent 21%),
+    radial-gradient(circle at 50% 50%, transparent 34%, rgba(59,130,246,0.10) 35%, transparent 36%),
+    radial-gradient(circle at 50% 50%, transparent 49%, rgba(59,130,246,0.10) 50%, transparent 51%);
+}
+
+/* Memory Room — deep neural purple */
+#room-memory {
+  background-color: #06010f;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(139,92,246,0.22) 0%, transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 31px, rgba(20,5,40,0.5) 31px, rgba(20,5,40,0.5) 32px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 31px, rgba(20,5,40,0.5) 31px, rgba(20,5,40,0.5) 32px);
+}
+
+/* Treasury — rich amber vault */
+#room-treasury {
+  background-color: #0a0700;
+  background-image:
+    radial-gradient(ellipse at 50% 35%, rgba(217,119,6,0.26) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 80%, rgba(161,79,0,0.14) 0%, transparent 40%),
+    repeating-linear-gradient(0deg, transparent 0px, transparent 47px, rgba(42,28,0,0.4) 47px, rgba(42,28,0,0.4) 48px),
+    repeating-linear-gradient(90deg, transparent 0px, transparent 47px, rgba(42,28,0,0.4) 47px, rgba(42,28,0,0.4) 48px);
+}
+
+/* ── Generic room icon (emoji fallback) ── */
+.room-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -60%);
+  font-size: 52px;
+  animation: room-icon-float 3.5s ease-in-out infinite;
+  cursor: pointer;
+  z-index: 2;
+  user-select: none;
+  pointer-events: none;
+}
+
+@keyframes room-icon-float {
+  0%, 100% { transform: translate(-50%, -60%) scale(1.0); filter: brightness(1.0); }
+  50%       { transform: translate(-50%, -63%) scale(1.06); filter: brightness(1.25); }
+}
+
+/* ── Agent canvas sprites (new rooms) ── */
+.sprite-agent {
+  position: absolute;
+  image-rendering: pixelated;
+  cursor: pointer;
+  z-index: 2;
+  filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.8));
+}
+
+/* ── Pipeline active — room glow ring ── */
+@keyframes pipeline-pulse {
+  0%, 100% { box-shadow: inset 0 0 40px rgba(0,255,136,0.06); }
+  50%       { box-shadow: inset 0 0 100px rgba(0,255,136,0.20); }
+}
+
+.room.pipeline-active {
+  border-color: rgba(0,255,136,0.7) !important;
+  animation: pipeline-pulse 2s ease-in-out infinite;
+}

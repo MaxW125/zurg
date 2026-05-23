@@ -28,8 +28,10 @@ import os
 import sys
 import urllib.request
 import urllib.error
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
+
+_CST = timezone(timedelta(hours=-6))
 
 sys.path.insert(0, "~/zurg")
 
@@ -165,7 +167,7 @@ def _load_weekly_log() -> list:
 
 def _append_weekly_log(briefing: str):
     entries = _load_weekly_log()
-    entries.append({"date": date.today().isoformat(), "briefing": briefing})
+    entries.append({"date": datetime.now(_CST).strftime("%Y-%m-%d"), "briefing": briefing})
     WEEKLY_LOG.write_text(json.dumps(entries, indent=2))
 
 
@@ -188,7 +190,7 @@ def run_room_job(job: str):
 
 def run_ceo_briefing():
     mode = _reporting_mode()
-    today = date.today().weekday()  # 0=Mon … 6=Sun
+    today = datetime.now(_CST).weekday()  # 0=Mon … 6=Sun, in CST
     context = _build_briefing_context()
 
     if mode == "daily":
@@ -200,10 +202,17 @@ def run_ceo_briefing():
             "Write as Zurg — direct, no fluff."
         )
         result = _post("/api/chat/ceo/instruct", {"message": prompt, "source": "cron_briefing"})
-        response = result.get("response", "")
-        if response:
-            _notify(response)
-        log.info(f"Daily briefing sent: {response[:120]}")
+        if result.get("error"):
+            log.error(f"CEO briefing endpoint failed: {result['error']}")
+            _notify(f"⚠️ Zurg couldn't send today's briefing — server error: {result['error'][:120]}")
+        else:
+            response = result.get("response", "")
+            if response:
+                _notify(response)
+            else:
+                log.warning("CEO briefing returned empty response — nothing sent")
+                _notify("⚠️ Zurg's daily briefing came back empty. Check server logs.")
+            log.info(f"Daily briefing sent: {response[:120]}")
 
     else:  # weekly
         if today != 6:  # Mon–Sat: accumulate

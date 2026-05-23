@@ -127,12 +127,19 @@ def _load_verdicts() -> list[dict]:
     return verdicts
 
 
+_last_auto_decided_image: str = ""
+
 @router.post("/auto-decide")
 async def auto_decide_approval(body: ApprovalDecision):
     """
     Autonomous mode: agent makes the approve/reject call, saves the verdict,
     and publishes to Shopify if approved — no owner input required.
     """
+    global _last_auto_decided_image
+    if body.image_path and body.image_path == _last_auto_decided_image:
+        raise HTTPException(status_code=409, detail="This design was already processed — duplicate request ignored.")
+    _last_auto_decided_image = body.image_path or ""
+
     result = await auto_decide(body.model_dump())
 
     # Build a full decision with agent reasoning as feedback
@@ -187,17 +194,24 @@ async def _trigger_rework(body: ApprovalDecision) -> None:
 
     brain = os.getenv("BRAIN_PATH", "./brain")
     brief_path = os.path.join(brain, "rooms", "captain", "last_brief.json")
+
+    # Build brief from the approval body — it carries all required fields.
+    # Supplement with last_brief.json only if it has useful extra context.
+    brief = {
+        "niche":            body.niche,
+        "product_type":     body.product_type,
+        "target_audience":  body.target_audience,
+        "keywords":         body.keywords,
+        "design_direction": body.design_direction,
+    }
     try:
         with open(brief_path) as f:
-            brief = json.load(f)
+            saved = json.load(f)
+        for k in ("target_audience", "keywords", "design_direction"):
+            if not brief.get(k) and saved.get(k):
+                brief[k] = saved[k]
     except Exception:
-        brief = {
-            "niche": body.niche,
-            "product_type": body.product_type,
-            "target_audience": body.target_audience,
-            "keywords": body.keywords,
-            "design_direction": body.design_direction,
-        }
+        pass
 
     design = {
         "image_path":   body.image_path,
@@ -260,10 +274,8 @@ async def decide_approval(body: ApprovalDecision, background_tasks: BackgroundTa
     - approved=True  → Factory publishes to Shopify + Etsy, notifies owner
     - approved=False → saves rejection, triggers redesign in background with feedback
     """
-    _save_verdict(body)
-
     if not body.approved:
-        # Build summary feedback string for the verdict file
+        # Build summary feedback string before saving so the verdict file captures it
         parts = []
         if not body.design_ok:       parts.append(f"Design: {body.design_feedback}")
         if not body.title_ok:        parts.append(f"Title: {body.title_feedback}")
@@ -271,6 +283,9 @@ async def decide_approval(body: ApprovalDecision, background_tasks: BackgroundTa
         if not body.tags_ok:         parts.append(f"Tags: {body.tags_feedback}")
         body.feedback = " | ".join(parts)
 
+    _save_verdict(body)
+
+    if not body.approved:
         background_tasks.add_task(_trigger_rework, body)
         return {
             "approved": False,

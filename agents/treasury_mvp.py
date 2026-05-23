@@ -1,7 +1,16 @@
 import os
 import json
-from datetime import datetime, date
+from datetime import datetime, timezone, timedelta
 from agents.brain import load_system_prompt
+
+# All timestamps and daily-cap resets use CST (UTC-6) to stay in sync with the researcher loop
+_CST = timezone(timedelta(hours=-6))
+
+def _cst_now() -> datetime:
+    return datetime.now(_CST)
+
+def _cst_today() -> str:
+    return _cst_now().strftime("%Y-%m-%d")
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 COSTS_LEDGER = os.path.join(BRAIN_PATH, "rooms", "treasury", "costs.jsonl")
@@ -39,7 +48,7 @@ def append_cost_entry(room: str, model: str, tokens_in: int, tokens_out: int) ->
     rate_in, rate_out = _MODEL_RATES.get(model, _DEFAULT_RATES)
     cost = round(tokens_in * rate_in + tokens_out * rate_out, 6)
     entry = {
-        "ts":        datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S"),
+        "ts":        _cst_now().strftime("%Y-%m-%dT%H:%M:%S"),
         "room":      room,
         "model":     model,
         "tokens_in": tokens_in,
@@ -52,9 +61,25 @@ def append_cost_entry(room: str, model: str, tokens_in: int, tokens_out: int) ->
     return cost
 
 
+def append_fixed_cost_entry(room: str, label: str, cost_usd: float) -> float:
+    """Write a fixed-cost line to the ledger (e.g. Etsy listing fee). Returns cost_usd."""
+    entry = {
+        "ts":        _cst_now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "room":      room,
+        "model":     label,
+        "tokens_in": 0,
+        "tokens_out": 0,
+        "cost_usd":  round(cost_usd, 6),
+    }
+    os.makedirs(os.path.dirname(COSTS_LEDGER), exist_ok=True)
+    with open(COSTS_LEDGER, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+    return cost_usd
+
+
 def get_today_spend() -> float:
-    """Sum cost_usd for all entries where ts starts with today's date."""
-    today = date.today().isoformat()
+    """Sum cost_usd for all entries where ts starts with today's CST date."""
+    today = _cst_today()
     total = 0.0
     try:
         with open(COSTS_LEDGER) as f:
@@ -103,7 +128,7 @@ def _read_all_entries() -> list[dict]:
 
 def get_report() -> dict:
     entries = _read_all_entries()
-    today = date.today().isoformat()
+    today = _cst_today()
 
     total_spend = 0.0
     today_spend = 0.0

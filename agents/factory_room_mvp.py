@@ -1,48 +1,11 @@
 import os
 import asyncio
-import base64
-import httpx
-from agents.printify_client import upload_image, create_product, get_mockup_urls, download_mockup, publish_product, get_product
+from agents.printify_client import upload_image, create_product, download_mockup, publish_product, get_product
 from agents.product_catalog import get_blueprint
 from agents.notify import notify
+from agents.treasury_mvp import append_fixed_cost_entry
+import agents.etsy_client as etsy_client
 
-SHOPIFY_API_VERSION = "2025-01"
-
-
-def _shopify_headers() -> dict:
-    return {
-        "X-Shopify-Access-Token": os.getenv("SHOPIFY_ACCESS_TOKEN", ""),
-        "Content-Type": "application/json",
-    }
-
-
-def _shopify_url(path: str) -> str:
-    store = os.getenv("SHOPIFY_STORE_URL", "")
-    return f"https://{store}/admin/api/{SHOPIFY_API_VERSION}/{path}"
-
-
-async def _attach_image_to_shopify(image_path: str, product_id: int, client: httpx.AsyncClient) -> str:
-    """Base64-encode a local image and attach it to a Shopify product. Returns image src URL."""
-    disk_path = os.path.join("frontend", "public", image_path.lstrip("/"))
-    with open(disk_path, "rb") as f:
-        image_data = base64.b64encode(f.read()).decode("utf-8")
-
-    filename = os.path.basename(disk_path)
-    payload = {
-        "image": {
-            "attachment": image_data,
-            "filename": filename,
-            "alt": "Product design",
-        }
-    }
-    r = await client.post(
-        _shopify_url(f"products/{product_id}/images.json"),
-        json=payload,
-        headers=_shopify_headers(),
-        timeout=60,
-    )
-    r.raise_for_status()
-    return r.json()["image"]["src"]
 
 
 async def run_factory(input: dict) -> dict:
@@ -62,6 +25,27 @@ async def run_factory(input: dict) -> dict:
     Returns:
       - product_id, product_url, storefront_url, title, model_used
     """
+    # Training mode — skip all publishing to avoid fees
+    if os.getenv("ZURG_TRAINING_MODE", "").lower() in ("1", "true", "yes"):
+        niche        = input.get("niche", "Custom Design")
+        product_type = input.get("product_type", "Unisex T-Shirt")
+        title        = input.get("title") or f"{niche} — {product_type}"
+        description  = input.get("description") or f"{niche} {product_type}"
+        print(f"[factory] TRAINING MODE — skipping publish for: {title}")
+        await notify(f"🏋️ Training mode: would have published '{title}' to Shopify + Etsy (skipped)")
+        return {
+            "product_id":               0,
+            "product_url":              "#training-mode",
+            "storefront_url":           "#training-mode",
+            "title":                    title,
+            "description":              description,
+            "model_used":               "training-mode",
+            "printify_product_id":      None,
+            "mockup_used":              False,
+            "etsy_product_url":         None,
+            "etsy_printify_product_id": None,
+        }
+
     niche        = input.get("niche", "Custom Design")
     product_type = input.get("product_type", "Unisex T-Shirt")
     image_path   = input.get("image_path", "")
@@ -109,31 +93,36 @@ async def run_factory(input: dict) -> dict:
             )
             etsy_pid          = ep["id"]
             etsy_preferred    = ep.get("_preferred_variant_ids", [])
-            print(f"[factory] Etsy product created: {etsy_pid} — publishing...")
+            print(f"[factory] Etsy product created: {etsy_pid} — waiting for mockups before publishing...")
 
-            await publish_product(etsy_pid, shop_id=etsy_shop_id)
-            print(f"[factory] Etsy publish sent — polling for mockups...")
-
-            # Phase 1: poll up to 120s just for mockup images (needed for Shopify listing)
+            # Phase 1: poll up to 3 minutes for mockup images BEFORE publishing.
+            # Printify starts generating mockups immediately after create_product().
+            # Publishing to Etsy before images exist causes Etsy to reject the listing.
             etsy_mock_urls: list[str] = []
-            for _ in range(40):
+            preferred_set = set(etsy_preferred)
+            for attempt in range(60):  # 60 * 3s = 180s max
                 await asyncio.sleep(3)
                 prod   = await get_product(etsy_pid, shop_id=etsy_shop_id)
                 images = prod.get("images", [])
                 if images:
-                    preferred_set = set(etsy_preferred)
                     if preferred_set:
                         etsy_mock_urls = [
                             img["src"] for img in images
                             if img.get("src") and preferred_set.intersection(img.get("variant_ids", []))
                         ]
                     etsy_mock_urls = etsy_mock_urls or [img["src"] for img in images if img.get("src")]
-                    print(f"[factory] Etsy mockups ready: {len(etsy_mock_urls)}")
+                    print(f"[factory] Etsy mockups ready after {(attempt+1)*3}s: {len(etsy_mock_urls)} images")
                     break
+            else:
+                print(f"[factory] No mockups after 180s — publishing anyway as fallback")
 
-            # Phase 2: poll up to 30s for the Etsy listing URL
+            # Publish to Etsy via Printify
+            print(f"[factory] Publishing to Etsy via Printify (mockups={'yes' if etsy_mock_urls else 'no'})...")
+            await publish_product(etsy_pid, shop_id=etsy_shop_id)
+
+            # Poll up to 150s for the Etsy listing URL
             etsy_url = None
-            for _ in range(10):
+            for _ in range(50):  # 50 * 3s = 150s
                 await asyncio.sleep(3)
                 prod   = await get_product(etsy_pid, shop_id=etsy_shop_id)
                 handle = (prod.get("external") or {}).get("handle") or ""
@@ -142,19 +131,11 @@ async def run_factory(input: dict) -> dict:
                     print(f"[factory] Etsy listing live: {etsy_url}")
                     break
 
-            # Printify sometimes shows "Publishing error" on first attempt but succeeds on retry
             if not etsy_url:
-                print(f"[factory] Etsy URL not found — retrying publish...")
-                await publish_product(etsy_pid, shop_id=etsy_shop_id)
-                for _ in range(10):
-                    await asyncio.sleep(3)
-                    prod   = await get_product(etsy_pid, shop_id=etsy_shop_id)
-                    handle = (prod.get("external") or {}).get("handle") or ""
-                    if handle:
-                        etsy_url = handle
-                        print(f"[factory] Etsy listing live (retry): {etsy_url}")
-                        break
+                print(f"[factory] Etsy URL not found after 150s — listing is live but URL not yet in Printify API")
+                etsy_url = "https://www.etsy.com/shop/KrakenAndCoDesigns"
 
+            # Download mockup for Shopify
             if etsy_mock_urls:
                 flat_name   = os.path.splitext(os.path.basename(disk_path))[0]
                 mockup_name = f"{flat_name}_mockup.png"
@@ -162,15 +143,8 @@ async def run_factory(input: dict) -> dict:
                 await download_mockup(etsy_mock_urls[0], mockup_disk)
                 mockup_path = f"/assets/generated/{mockup_name}"
                 print(f"[factory] Mockup downloaded: {mockup_name}")
-            else:
-                print(f"[factory] No mockups from Etsy — using flat design")
 
-            if not etsy_url:
-                await notify(
-                    "⚠️ Etsy publish failed for: " + title + "\n"
-                    "Fix: printify.com → Stores → KrakenAndCoDesigns → reconnect Etsy"
-                )
-                etsy_url = "https://www.etsy.com/shop/KrakenAndCoDesigns"
+            append_fixed_cost_entry("factory", "etsy-listing-fee", 0.20)
 
             etsy_product_url = etsy_url
             etsy_printify_id = etsy_pid
@@ -180,20 +154,19 @@ async def run_factory(input: dict) -> dict:
             traceback.print_exc()
             await notify(
                 "⚠️ Etsy publish error for: " + title + "\n"
-                f"Error: {str(e)[:120]}\n"
-                "Fix: printify.com → Stores → KrakenAndCoDesigns → reconnect Etsy"
+                f"Error: {str(e)[:120]}"
             )
     elif not etsy_shop_id:
         print("[factory] Etsy skipped — PRINTIFY_ETSY_SHOP_ID not set")
 
     # ── Step 2: Shopify ───────────────────────────────────────────────────────
-    # Use the mockup downloaded from Etsy. Also create a Printify product in the
-    # Shopify shop so fulfillment works once the Shopify connection is restored.
+    # Create a Printify product in the Shopify shop and publish it via Printify's
+    # OAuth connection — this creates an active Shopify listing without needing
+    # a direct Shopify API token.
     async def _shopify_flow() -> dict:
         if not image_id:
             raise RuntimeError("image_id required — Printify upload failed")
 
-        # Create Shopify Printify product (for fulfillment when shop reconnects)
         sp = await create_product(
             title=title,
             description=description,
@@ -206,44 +179,31 @@ async def run_factory(input: dict) -> dict:
         pid = sp["id"]
         print(f"[factory] Shopify Printify product created: {pid}")
 
-        try:
-            await publish_product(pid)
-        except Exception as e:
-            print(f"[factory] Shopify publish failed (shop disconnected?): {e}")
+        await publish_product(pid)
+        print(f"[factory] Shopify product published via Printify")
 
-        # Use Etsy mockup if we got one; otherwise fall back to flat design
-        listing_image_path = mockup_path or image_path
-        mockup_used        = bool(mockup_path)
-
-        product_payload = {
-            "product": {
-                "title":        title,
-                "body_html":    f"<p>{description}</p>",
-                "product_type": product_type,
-                "status":       "draft",
-                "tags":         ", ".join(input.get("tags") or input.get("keywords", [])),
-                "variants":     [{"price": "29.99", "requires_shipping": True, "taxable": True}],
-            }
-        }
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.post(
-                _shopify_url("products.json"),
-                json=product_payload,
-                headers=_shopify_headers(),
-            )
-            r.raise_for_status()
-            shopify_product = r.json()["product"]
-            shopify_id      = shopify_product["id"]
-            if listing_image_path:
-                await _attach_image_to_shopify(listing_image_path, shopify_id, client)
-
+        # Poll up to 90s for the Shopify listing URL from Printify
         store = os.getenv("SHOPIFY_STORE_URL", "")
+        shopify_url = None
+        for _ in range(30):  # 30 * 3s = 90s
+            await asyncio.sleep(3)
+            prod   = await get_product(pid)
+            handle = (prod.get("external") or {}).get("handle") or ""
+            if handle:
+                shopify_url = handle if handle.startswith("http") else f"https://{store}/products/{handle}"
+                print(f"[factory] Shopify listing live: {shopify_url}")
+                break
+
+        if not shopify_url:
+            shopify_url = f"https://{store}"
+            print(f"[factory] Shopify URL not found after 90s — product is live but URL pending")
+
         return {
             "printify_product_id": pid,
-            "product_id":          shopify_id,
-            "product_url":         f"https://{store}/admin/products/{shopify_id}",
-            "storefront_url":      f"https://{store}/products/{shopify_product['handle']}",
-            "mockup_used":         mockup_used,
+            "product_id":          pid,
+            "product_url":         shopify_url,
+            "storefront_url":      shopify_url,
+            "mockup_used":         bool(mockup_path),
         }
 
     shopify_result = await _shopify_flow()

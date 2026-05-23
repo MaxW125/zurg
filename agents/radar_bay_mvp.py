@@ -1,7 +1,9 @@
 import os
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
 
@@ -233,11 +235,11 @@ Analyse this and produce a prioritised list of improvement proposals. Focus on:
 
 Output only the JSON specified."""
 
+    model_used = "claude"
     try:
         raw = await call_claude(prompt, system=system, room="radar")
     except Exception:
         raw = await call_claude(prompt, system=system, room="radarbay")
-        model_used = "claude"
 
     # Try object form first {"proposals": [...]}, then bare array [...]
     parsed = None
@@ -273,7 +275,7 @@ Output only the JSON specified."""
         p["rationale"] = str(p.get("rationale", ""))
 
     data = {
-        "run_date": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        "run_date": datetime.now(_CST).strftime("%Y-%m-%d %H:%M"),
         "model_used": model_used,
         "rooms_scanned": rooms_scanned,
         "proposals": proposals,

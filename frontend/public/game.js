@@ -22,6 +22,7 @@ const state = {
   autoResearch:    localStorage.getItem('autoResearch')  === 'true',
   autoDesign:      localStorage.getItem('autoDesign')    === 'true',
   autoApproval:    localStorage.getItem('autoApproval')  === 'true',
+  autoDecidePending: false,
 };
 
 const API = '';  // same origin — server on port 9000 serves both UI and API
@@ -57,6 +58,30 @@ function openPanel(room) {
   document.getElementById('panel-title').textContent = titles[room] || room.toUpperCase();
 
   renderPanel(room);
+}
+
+function _fmtCountdown(seconds) {
+  if (seconds <= 0) return 'SOON';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m ${String(s).padStart(2,'0')}s`;
+  return `${s}s`;
+}
+
+let _approvalCountdownVal = null;
+let _approvalCountdownTimer = null;
+
+function _startApprovalCountdown(seconds) {
+  if (_approvalCountdownTimer) clearInterval(_approvalCountdownTimer);
+  _approvalCountdownVal = seconds;
+  _approvalCountdownTimer = setInterval(() => {
+    const el = document.getElementById('approval-countdown');
+    if (!el) { clearInterval(_approvalCountdownTimer); return; }
+    _approvalCountdownVal = Math.max(0, _approvalCountdownVal - 1);
+    el.textContent = _fmtCountdown(_approvalCountdownVal);
+  }, 1000);
 }
 
 function closePanel() {
@@ -288,6 +313,7 @@ async function runResearch() {
 
   if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> RESEARCHING NICHES...</div>`;
   if (btn) btn.disabled = true;
+  window.zurkSprites?.setRoomActive('research', true);
 
   try {
     const res = await fetch(`${API}/api/rooms/research/run`, {
@@ -298,12 +324,18 @@ async function runResearch() {
     const data = await res.json();
     state.brief = data;
     toast('RESEARCH COMPLETE — ' + data.niche.toUpperCase());
+    // Researcher walks to Design room to hand off the brief
+    window.zurkSprites?.setRoomActive('research', false);
+    window.zurkSprites?.summonChar('sprite-researcher', 2, 90_000);
+    window.zurkSprites?.setRoomActive('design', true);
+    setTimeout(() => window.zurkSprites?.setRoomActive('design', false), 90_000);
     renderPanel('research');
     if (state.autoDesign) {
       closePanel();
       setTimeout(() => runDesign(), 400);
     }
   } catch (e) {
+    window.zurkSprites?.setRoomActive('research', false);
     if (statusEl) statusEl.innerHTML = `<div class="empty-state">ERROR: ${escHtml(e.message)}</div>`;
   }
 
@@ -351,6 +383,7 @@ async function runDesign() {
 
   if (statusEl) statusEl.innerHTML = `<div class="loading-row"><div class="spinner"></div> GENERATING DESIGN — THIS TAKES ~15s...</div>`;
   if (btn) btn.disabled = true;
+  window.zurkSprites?.setRoomActive('design', true);
 
   try {
     const res = await fetch(`${API}/api/rooms/design/run`, {
@@ -361,11 +394,17 @@ async function runDesign() {
     const data = await res.json();
     state.design = data;
     toast('DESIGN READY' + (state.autoApproval ? ' — AUTO-APPROVING...' : ' — GO TO APPROVAL ROOM'));
+    // Designer walks to Approval room to present the design
+    window.zurkSprites?.setRoomActive('design', false);
+    window.zurkSprites?.summonChar('sprite-designer', 4, 90_000);
+    window.zurkSprites?.setRoomActive('approval', true);
+    setTimeout(() => window.zurkSprites?.setRoomActive('approval', false), 90_000);
     renderPanel('design');
     if (state.autoApproval) {
       setTimeout(() => _runAutoApprove(), 400);
     }
   } catch (e) {
+    window.zurkSprites?.setRoomActive('design', false);
     if (statusEl) statusEl.innerHTML = `<div class="empty-state">ERROR: ${escHtml(e.message)}</div>`;
   }
 
@@ -459,7 +498,18 @@ async function renderApproval(body) {
   } catch (_) {}
 
   const verdictCount = verdicts.length;
-  const phase = verdictCount < 100 ? 1 : verdictCount < 200 ? 2 : 3;
+
+  // Fetch today's publish count and next run time from research config
+  let todayCount = 0, maxPerDay = 5, nextRunSeconds = null;
+  try {
+    const sr = await fetch(`${API}/api/rooms/research/autonomous/status`);
+    if (sr.ok) {
+      const s = await sr.json();
+      todayCount     = s.products_today   ?? 0;
+      maxPerDay      = s.max_per_day      ?? 5;
+      nextRunSeconds = s.next_run_seconds ?? null;
+    }
+  } catch (_) {}
 
   const historyHtml = verdicts.slice(-3).reverse().map(v => `
     <div class="verdict-entry ${v.approved ? 'approved' : 'rejected'}">
@@ -475,16 +525,21 @@ async function renderApproval(body) {
   const statsHtml = `
     <div class="panel-section">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-        <div class="panel-section-title" style="margin-bottom:0">▶ APPROVAL ENGINE — PHASE ${phase}</div>
+        <div class="panel-section-title" style="margin-bottom:0">▶ APPROVAL ENGINE</div>
         <button onclick="toggleAutoApproval()"
-                style="font-family:'Press Start 2P',monospace;font-size:6px;padding:6px 10px;cursor:pointer;letter-spacing:1px;${modeBtnStyle}">
+                style="font-family:'Press Start 2P',monospace;font-size:8px;padding:8px 12px;cursor:pointer;letter-spacing:1px;${modeBtnStyle}">
           ${modeBtnTxt}
         </button>
       </div>
       <div class="brief-field">MODE: <span>${modeLabel}</span></div>
-      <div class="brief-field">VERDICTS COLLECTED: <span>${verdictCount} / 100</span></div>
+      <div class="brief-field">TODAY: <span>${todayCount} / ${maxPerDay}</span></div>
+      <div class="brief-field">NEXT RUN: <span id="approval-countdown">${nextRunSeconds !== null ? _fmtCountdown(nextRunSeconds) : '—'}</span></div>
+      <div class="brief-field">VERDICTS: <span>${verdictCount}</span></div>
       ${historyHtml ? `<div class="verdict-history">${historyHtml}</div>` : ''}
     </div>`;
+
+  // Start live countdown after panel renders
+  if (nextRunSeconds !== null) setTimeout(() => _startApprovalCountdown(nextRunSeconds), 50);
 
   if (hasProduct) {
     body.innerHTML = `
@@ -508,71 +563,42 @@ async function renderApproval(body) {
     return;
   }
 
-  // ── Auto mode: agent decides immediately ──
+  // ── Auto mode: show status only — _runAutoApprove() handles the actual decision ──
   if (state.autoApproval) {
+    const autoBody = state.autoDecidePending
+      ? `<div class="loading-row"><div class="spinner"></div> AGENT DECIDING...</div>`
+      : `<div class="empty-state">AUTO MODE ACTIVE.<br><br>PIPELINE WILL DECIDE AUTOMATICALLY.</div>`;
     body.innerHTML = `
       <div class="room-panel">
         ${statsHtml}
         <div class="panel-section" style="border-color:#00994d">
-          <div class="panel-section-title" style="color:var(--green)">▶ DESIGN IN QUEUE</div>
-          <img class="design-preview" src="${escHtml(state.design.image_path)}" alt="Design">
-          <div class="brief-field">NICHE: <span>${escHtml(state.design.niche)}</span></div>
-          <div class="brief-field">PRODUCT: <span>${escHtml(state.design.product_type)}</span></div>
-          <div id="auto-status">
-            <div class="loading-row"><div class="spinner"></div> AGENT DECIDING...</div>
-          </div>
+          <div class="panel-section-title" style="color:var(--green)">▶ AUTO MODE</div>
+          ${hasDesign ? `
+            <img class="design-preview" src="${escHtml(state.design.image_path)}" alt="Design">
+            <div class="brief-field">NICHE: <span>${escHtml(state.design.niche)}</span></div>
+            <div class="brief-field">PRODUCT: <span>${escHtml(state.design.product_type)}</span></div>` : ''}
+          ${autoBody}
         </div>
       </div>`;
-
-    const payload = { approved: true, ...state.brief, ...state.design };
-    fetch(`${API}/api/approval/auto-decide`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-      .then(r => r.json())
-      .then(data => {
-        const el = document.getElementById('auto-status');
-        if (!el) return;
-        if (data.approved) {
-          state.product = data.product;
-          el.innerHTML = `
-            <div class="verdict-entry approved">⚡ AGENT APPROVED — PUBLISHED TO SHOPIFY</div>
-            <div style="font-size:7px;line-height:2;color:var(--text);margin-top:8px">${escHtml(data.reasoning || '')}</div>
-            <br><button class="btn btn-yellow" onclick="resetPipeline()">▶ START NEW PIPELINE</button>`;
-          toast('AGENT APPROVED + PUBLISHED.');
-        } else {
-          state.design = null;
-          el.innerHTML = `
-            <div class="verdict-entry rejected">✕ AGENT REJECTED</div>
-            <div style="font-size:7px;line-height:2;color:var(--text);margin-top:8px">${escHtml(data.reasoning || '')}</div>
-            <br><button class="btn btn-purple" onclick="closePanel()">▶ GENERATE ANOTHER DESIGN</button>`;
-          toast('AGENT REJECTED — GENERATE A NEW DESIGN.');
-        }
-      })
-      .catch(e => {
-        const el = document.getElementById('auto-status');
-        if (el) el.innerHTML = `<div class="empty-state">ERROR: ${escHtml(e.message)}</div>`;
-      });
     return;
   }
 
   // ── Manual mode: owner reviews ──
   const d = state.design;
-  const tagsHtml = (d.tags || []).map(t => `<span style="display:inline-block;background:#2d1060;color:#a855f7;border:1px solid #7c3aed;padding:2px 6px;margin:2px;font-size:6px;letter-spacing:1px">${escHtml(t)}</span>`).join('');
+  const tagsHtml = (d.tags || []).map(t => `<span style="display:inline-block;background:#2d1060;color:#a855f7;border:1px solid #7c3aed;padding:3px 8px;margin:3px;font-size:8px;letter-spacing:1px">${escHtml(t)}</span>`).join('');
 
   function fieldBlock(id, label, content) {
     return `
       <div class="panel-section" style="margin-top:8px" id="field-${id}">
         <div style="display:flex;align-items:center;justify-content:space-between">
-          <div class="panel-section-title" style="margin-bottom:0;font-size:7px">▶ ${label}</div>
-          <label style="font-family:'Press Start 2P',monospace;font-size:6px;color:#ff4444;cursor:pointer;display:flex;align-items:center;gap:6px">
-            <input type="checkbox" id="bad-${id}" onchange="toggleFieldFeedback('${id}')" style="cursor:pointer"> MARK BAD
+          <div class="panel-section-title" style="margin-bottom:0">▶ ${label}</div>
+          <label style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ff4444;cursor:pointer;display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="bad-${id}" onchange="toggleFieldFeedback('${id}')" style="cursor:pointer;width:14px;height:14px"> MARK BAD
           </label>
         </div>
-        <div style="margin-top:6px;font-size:7px;line-height:1.8;color:var(--text)">${content}</div>
+        <div style="margin-top:8px;font-size:9px;line-height:2;color:var(--text)">${content}</div>
         <textarea id="fb-${id}" class="feedback-input" placeholder="Required: what's wrong with the ${label.toLowerCase()}?"
-                  style="display:none;margin-top:6px;border-color:#ff4444"></textarea>
+                  style="display:none;margin-top:8px;border-color:#ff4444"></textarea>
       </div>`;
   }
 
@@ -613,7 +639,7 @@ async function renderApproval(body) {
       if (!el) return;
       el.innerHTML = `
         <div class="panel-section-title" style="color:var(--green)">▶ APPROVAL AGENT ANALYSIS</div>
-        <div style="font-size:7px;line-height:2;color:var(--text)">${escHtml(data.analysis || '')}</div>`;
+        <div style="font-size:9px;line-height:2;color:var(--text)">${escHtml(data.analysis || '')}</div>`;
     })
     .catch(() => {
       const el = document.getElementById('agent-analysis');
@@ -705,6 +731,10 @@ async function rejectDesign() {
 
 async function _runAutoApprove() {
   if (!state.design) return;
+  if (state.autoDecidePending) return;  // prevent duplicate calls for the same design
+  state.autoDecidePending = true;
+  if (state.activeRoom === 'approval') renderPanel('approval');
+
   const payload = { approved: true, ...state.brief, ...state.design };
   try {
     const res = await fetch(`${API}/api/approval/auto-decide`, {
@@ -715,16 +745,18 @@ async function _runAutoApprove() {
     const data = await res.json();
     if (data.approved) {
       state.product = data.product;
-      toast('⚡ AGENT APPROVED + PUBLISHED TO SHOPIFY' + (state.autoMediaBay ? ' — GENERATING CONTENT...' : ''));
+      toast('⚡ AGENT APPROVED + PUBLISHED' + (state.autoMediaBay ? ' — GENERATING CONTENT...' : ''));
       if (state.autoMediaBay) setTimeout(() => _runAutoMediaBay(), 600);
     } else {
       state.design = null;
       toast('⚡ AGENT REJECTED — GENERATING NEW DESIGN...');
       if (state.autoDesign) setTimeout(() => runDesign(), 800);
     }
-    if (state.activeRoom) renderPanel(state.activeRoom);
   } catch (e) {
     toast('AUTO-APPROVAL ERROR — CHECK LOGS');
+  } finally {
+    state.autoDecidePending = false;
+    if (state.activeRoom === 'approval') renderPanel('approval');
   }
 }
 
@@ -2457,6 +2489,117 @@ function escHtml(str) {
   };
 })();
 
+// ── Agent Sprites (canvas pixel art) ──────────────────────────
+(function initAgentSprites() {
+  function drawAgent(id, accentColor) {
+    const canvas = document.getElementById(id);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const cx = W / 2;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Drop shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.beginPath();
+    ctx.ellipse(cx, H - 10, 26, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Antenna base
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(cx - 5, 3, 10, 3);
+    // Antenna tip (round-ish glow dot)
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(cx - 3, 0, 6, 4);
+    ctx.fillStyle = accentColor + 'aa';
+    ctx.fillRect(cx - 6, 1, 12, 4);
+
+    // Head (pale blue-white)
+    ctx.fillStyle = '#c4d4e4';
+    ctx.fillRect(cx - 20, 8, 40, 26);
+    // Head outline
+    ctx.fillStyle = '#111422';
+    ctx.fillRect(cx - 22, 6, 44, 2);   // top
+    ctx.fillRect(cx - 22, 34, 44, 2);  // bottom
+    ctx.fillRect(cx - 22, 8, 2, 26);   // left
+    ctx.fillRect(cx + 20, 8, 2, 26);   // right
+
+    // Eye sockets (dark)
+    ctx.fillStyle = '#0a1020';
+    ctx.fillRect(cx - 15, 15, 10, 10);
+    ctx.fillRect(cx + 5, 15, 10, 10);
+    // Eye glow (teal — matching existing sprites)
+    ctx.fillStyle = '#00ffcc';
+    ctx.fillRect(cx - 13, 17, 6, 6);
+    ctx.fillRect(cx + 7, 17, 6, 6);
+    // Ambient eye glow
+    ctx.fillStyle = '#00ffcc14';
+    ctx.fillRect(cx - 18, 13, 16, 14);
+    ctx.fillRect(cx + 2, 13, 16, 14);
+
+    // Neck
+    ctx.fillStyle = '#7080a0';
+    ctx.fillRect(cx - 7, 36, 14, 5);
+
+    // Shoulders (accent color)
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(cx - 34, 38, 12, 22);
+    ctx.fillRect(cx + 22, 38, 12, 22);
+
+    // Body
+    ctx.fillStyle = '#505f78';
+    ctx.fillRect(cx - 22, 38, 44, 34);
+    // Body outline
+    ctx.fillStyle = '#111422';
+    ctx.fillRect(cx - 24, 36, 48, 2);   // top
+    ctx.fillRect(cx - 24, 72, 48, 2);   // bottom
+    ctx.fillRect(cx - 24, 38, 2, 34);   // left
+    ctx.fillRect(cx + 22, 38, 2, 34);   // right
+
+    // Chest panel (accent)
+    ctx.fillStyle = accentColor;
+    ctx.fillRect(cx - 13, 43, 26, 18);
+    // Chest lines (darker)
+    ctx.fillStyle = 'rgba(0,0,0,0.38)';
+    ctx.fillRect(cx - 11, 47, 22, 2);
+    ctx.fillRect(cx - 11, 52, 22, 2);
+    ctx.fillRect(cx - 11, 57, 22, 2);
+
+    // Legs
+    ctx.fillStyle = '#2e3a50';
+    ctx.fillRect(cx - 21, 74, 17, 28);
+    ctx.fillRect(cx + 4, 74, 17, 28);
+    // Leg outline
+    ctx.fillStyle = '#111422';
+    ctx.fillRect(cx - 23, 72, 19, 2);
+    ctx.fillRect(cx + 4, 72, 19, 2);
+
+    // Feet
+    ctx.fillStyle = '#181e2c';
+    ctx.fillRect(cx - 25, 100, 22, 8);
+    ctx.fillRect(cx + 3, 100, 22, 8);
+    ctx.fillStyle = '#111422';
+    ctx.fillRect(cx - 25, 108, 22, 2);
+    ctx.fillRect(cx + 3, 108, 22, 2);
+  }
+
+  // Each agent gets a unique accent color matching their room theme
+  drawAgent('sprite-factory',    '#ff6b35');  // orange  — industrial
+  drawAgent('sprite-approval',   '#00d664');  // green   — judicial
+  drawAgent('sprite-analytics',  '#ffd700');  // gold    — data
+  drawAgent('sprite-pricing',    '#f59e0b');  // amber   — financial
+  drawAgent('sprite-cs',         '#06b6d4');  // cyan    — support
+  drawAgent('sprite-shophealth', '#22c55e');  // lime    — health
+  drawAgent('sprite-warroom',    '#ef4444');  // red     — military
+  drawAgent('sprite-monitoring', '#00e5ff');  // bright cyan — tech
+  drawAgent('sprite-mediabay',   '#ec4899');  // pink    — social
+  drawAgent('sprite-armory',     '#9ca3af');  // steel   — weapons
+  drawAgent('sprite-radarbay',   '#3b82f6');  // blue    — radar
+  drawAgent('sprite-memory',     '#8b5cf6');  // purple  — neural
+  drawAgent('sprite-treasury',   '#d97706');  // amber   — vault
+})();
+
 // ── Character Movement (grid path + circle wander) ─────────────
 (function initCharacterMovement() {
   const RADIUS       = 260;
@@ -2464,7 +2607,6 @@ function escHtml(str) {
   const TRAVEL_SPEED = CIRCLE_SPEED * RADIUS;  // match arc walking speed
   const VISIT_MIN    = 8000;
   const VISIT_MAX    = 20000;
-  const VISIT_CHANCE = 0.0002;
 
   // 4×4 grid of rooms; gx/gy are grid coords; built=false rooms are dark placeholders
   const ROOMS = [
@@ -2544,13 +2686,28 @@ function escHtml(str) {
       arrivalAngle: 0,
       destRoom:     null,
       visitUntil:   0,
+      summonDest:   null,   // room to go when summoned by a pipeline event
+      summonedUntil: 0,     // stay at summon dest until this timestamp
     };
   }
 
   const chars = [
-    makeChar('sprite-zurg',       160, 160, 0),
-    makeChar('sprite-researcher', 144, 144, 1),
-    makeChar('sprite-designer',   144, 144, 2),
+    makeChar('sprite-zurg',       160, 160,  0),   // CEO
+    makeChar('sprite-researcher', 144, 144,  1),   // Research
+    makeChar('sprite-designer',   144, 144,  2),   // Design
+    makeChar('sprite-factory',     96, 120,  3),   // Factory
+    makeChar('sprite-approval',    96, 120,  4),   // Approval
+    makeChar('sprite-analytics',   96, 120,  5),   // Analytics
+    makeChar('sprite-pricing',     96, 120,  6),   // Pricing
+    makeChar('sprite-cs',          96, 120,  7),   // CS
+    makeChar('sprite-shophealth',  96, 120,  8),   // Shop Health
+    makeChar('sprite-warroom',     96, 120,  9),   // War Room
+    makeChar('sprite-monitoring',  96, 120, 10),   // Monitoring
+    makeChar('sprite-mediabay',    96, 120, 11),   // Media Bay
+    makeChar('sprite-armory',      96, 120, 12),   // Armory
+    makeChar('sprite-radarbay',    96, 120, 13),   // Radar Bay
+    makeChar('sprite-memory',      96, 120, 14),   // Memory Room
+    makeChar('sprite-treasury',    96, 120, 15),   // Treasury
   ].filter(Boolean);
 
   function place(c) {
@@ -2615,10 +2772,6 @@ function escHtml(str) {
 
         case 'wandering':
           stepCircle(c, now);
-          if (Math.random() < VISIT_CHANCE) {
-            const others = ROOMS.filter(r => r !== c.home && r.built);
-            if (others.length) startPath(c, others[Math.floor(Math.random() * others.length)]);
-          }
           break;
 
         case 'to_exit':
@@ -2634,6 +2787,10 @@ function escHtml(str) {
             c.pauseUntil   = 0;
             if (c.destRoom === c.home) {
               c.state = 'wandering';
+            } else if (c.summonDest === c.destRoom) {
+              // Pipeline event summon — stay until timer expires
+              c.state     = 'summoned';
+              c.summonDest = null;
             } else {
               c.visitUntil = now + VISIT_MIN + Math.random() * (VISIT_MAX - VISIT_MIN);
               c.state = 'visiting';
@@ -2649,6 +2806,11 @@ function escHtml(str) {
           stepCircle(c, now);
           if (now > c.visitUntil) startPath(c, c.home);
           break;
+
+        case 'summoned':
+          stepCircle(c, now);
+          if (now > c.summonedUntil) startPath(c, c.home);
+          break;
       }
       place(c);
     });
@@ -2656,6 +2818,31 @@ function escHtml(str) {
   }
 
   requestAnimationFrame(tick);
+
+  // ── Pipeline event API — used by initPipelinePoller below ──
+  function summonChar(spriteId, destRoomIdx, stayMs) {
+    const c    = chars.find(ch => ch.el.id === spriteId);
+    const dest = ROOMS[destRoomIdx];
+    if (!c || !dest) return;
+    c.summonDest    = dest;
+    c.summonedUntil = performance.now() + stayMs;
+    if (c.currentRoom === dest) {
+      c.state = 'summoned';
+    } else {
+      startPath(c, dest);  // interrupts current wandering/visiting
+    }
+  }
+
+  function summonAll(destRoomIdx, stayMs) {
+    chars.forEach(c => summonChar(c.el.id, destRoomIdx, stayMs));
+  }
+
+  function setRoomActive(roomId, active) {
+    const el = document.getElementById('room-' + roomId);
+    if (el) el.classList.toggle('pipeline-active', active);
+  }
+
+  window.zurkSprites = { summonChar, summonAll, setRoomActive, chars, ROOMS };
 })();
 
 // ── Zoom & Pan ─────────────────────────────────────────────────
@@ -2777,3 +2964,74 @@ function escHtml(str) {
 window.addEventListener('keydown', e => {
   if (e.key === 'Escape') closePanel();
 });
+
+// ── Pipeline Event Poller ─────────────────────────────────────
+// Detects when the researcher finishes a brief or designer finishes a design
+// and triggers sprite movement to reflect what's happening in the pipeline.
+(function initPipelinePoller() {
+  let lastBriefHash  = null;
+  let lastDesignHash = null;
+
+  // Cheap content hash — detects any change in API response
+  async function fetchHash(url) {
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return null;
+      const text = await res.text();
+      // Use length + first 80 chars as a fast change detector
+      return text.length + '|' + text.slice(0, 80);
+    } catch { return null; }
+  }
+
+  // Room IDs matching ROOMS array indices
+  const ROOM_IDX = {
+    research: 1, design: 2, factory: 3, approval: 4, warroom: 9,
+  };
+
+  async function poll() {
+    const briefHash  = await fetchHash('/api/rooms/research/latest-brief');
+    const designHash = await fetchHash('/api/rooms/design/latest');
+
+    // Brief changed → Researcher walks to Design room to hand off the brief
+    if (briefHash && briefHash !== lastBriefHash && lastBriefHash !== null) {
+      if (window.zurkSprites) {
+        window.zurkSprites.summonChar('sprite-researcher', ROOM_IDX.design, 90_000);
+        window.zurkSprites.setRoomActive('research', false);
+        window.zurkSprites.setRoomActive('design', true);
+        setTimeout(() => window.zurkSprites?.setRoomActive('design', false), 90_000);
+      }
+    }
+    if (briefHash) lastBriefHash = briefHash;
+
+    // Design changed → Designer walks to Approval room to present the design
+    if (designHash && designHash !== lastDesignHash && lastDesignHash !== null) {
+      if (window.zurkSprites) {
+        window.zurkSprites.summonChar('sprite-designer', ROOM_IDX.approval, 90_000);
+        window.zurkSprites.setRoomActive('design', false);
+        window.zurkSprites.setRoomActive('approval', true);
+        setTimeout(() => window.zurkSprites?.setRoomActive('approval', false), 90_000);
+      }
+    }
+    if (designHash) lastDesignHash = designHash;
+  }
+
+  // War Room: at 7am every day all agents convene
+  function checkWarRoomTime() {
+    const now = new Date();
+    if (now.getHours() === 7 && now.getMinutes() === 0) {
+      if (window.zurkSprites) {
+        window.zurkSprites.summonAll(ROOM_IDX.warroom, 5 * 60_000); // 5 minute meeting
+        toast('⚔️ WAR ROOM — ALL AGENTS REPORTING IN');
+      }
+    }
+  }
+
+  // Seed initial hashes on load (no event fires on first load)
+  (async () => {
+    lastBriefHash  = await fetchHash('/api/rooms/research/latest-brief');
+    lastDesignHash = await fetchHash('/api/rooms/design/latest');
+  })();
+
+  setInterval(poll, 30_000);            // poll every 30s
+  setInterval(checkWarRoomTime, 60_000); // clock check every minute
+})();

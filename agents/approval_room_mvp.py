@@ -58,9 +58,24 @@ def _load_verdict_history() -> list[dict]:
                     verdict["title"] = line.replace("Title:", "").strip()
                 elif line.startswith("Source:"):
                     verdict["source"] = line.replace("Source:", "").strip()
+            # Parse field verdicts (per-field pass/fail lines)
+            field_feedback = ""
+            if "## Field Verdicts" in content:
+                field_section = content.split("## Field Verdicts", 1)[1]
+                field_section = field_section.split("##")[0].strip()
+                # Keep only the lines that flagged bad fields
+                bad_lines = [l for l in field_section.splitlines() if "✗ BAD" in l]
+                if bad_lines:
+                    field_feedback = "; ".join(bad_lines)
+            # Owner summary (assembled from per-field parts)
+            summary_feedback = ""
             if "## Owner Feedback" in content:
                 feedback_section = content.split("## Owner Feedback", 1)[1]
-                verdict["feedback"] = feedback_section.split("##")[0].strip()
+                summary_feedback = feedback_section.split("##")[0].strip()
+                if summary_feedback == "(no summary provided)":
+                    summary_feedback = ""
+            # Combine: prefer summary, append field detail if present
+            verdict["feedback"] = " | ".join(filter(None, [summary_feedback, field_feedback])) or "(no feedback)"
             verdicts.append(verdict)
         except Exception:
             continue

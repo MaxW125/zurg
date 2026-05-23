@@ -1,21 +1,25 @@
 import os
 import json
 import glob
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude_haiku
 from agents.brain import load_system_prompt
 import httpx
+import agents.etsy_client as etsy
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 ANALYTICS_DIR = os.path.join(BRAIN_PATH, "rooms", "analytics", "reports")
 SHOPIFY_API_VERSION = "2025-01"
 
-_ANALYSIS_FALLBACK = """You are the Analytics Agent for a print-on-demand Shopify store.
+_ANALYSIS_FALLBACK = """You are the Analytics Agent for a print-on-demand business selling on Shopify and Etsy.
 Analyze the provided store and pipeline data and generate a concise report.
 Focus on:
-- What's performing well (active products, revenue, niches)
+- What's performing well (active products, revenue, niches) across both platforms
 - What's stalled or needs attention (drafts sitting idle, low approval rate)
 - Pipeline health (research → design → approval → publish conversion)
+- Channel comparison — if both Shopify and Etsy data are present, compare their performance
 - Specific, actionable recommendations for improvement
 If previous report data is provided, call out key changes (up or down).
 Be direct and specific. Use bullet points. 200 words max."""
@@ -134,6 +138,7 @@ async def _synthesize_insights(
     pipeline: dict,
     product_stats: list,
     previous: dict | None,
+    etsy_data: dict | None = None,
 ) -> tuple[str, str]:
     active_count = sum(1 for p in products if p["status"] == "active")
     draft_count = len(products) - active_count
@@ -149,33 +154,42 @@ async def _synthesize_insights(
         for p in top_3
     ) or "  - No products yet"
 
+    etsy_str = ""
+    if etsy_data:
+        etsy_str = f"""
+ETSY CHANNEL:
+- Active listings: {etsy_data.get('active_listings', 0)}
+- Total orders (receipts): {etsy_data.get('orders_total', 0)}
+- Revenue (paid): ${etsy_data.get('revenue_total', 0):.2f}
+"""
+
     prev_str = ""
     if previous:
         prev_str = f"""
 Previous report ({previous.get('report_date', 'unknown')}):
-  - Products: {previous.get('products_total', '?')} ({previous.get('products_active', '?')} active, {previous.get('products_draft', '?')} draft)
-  - Orders: {previous.get('orders_total', '?')}
-  - Revenue: ${previous.get('revenue_total', 0):.2f}
+  - Shopify products: {previous.get('products_total', '?')} ({previous.get('products_active', '?')} active)
+  - Shopify orders: {previous.get('orders_total', '?')} / Revenue: ${previous.get('revenue_total', 0):.2f}
+  - Etsy orders: {previous.get('etsy_orders_total') or '?'} / Revenue: ${(previous.get('etsy_revenue_total') or 0):.2f}
   - Pipeline: {previous.get('briefs_run', '?')} briefs, {previous.get('verdicts_collected', '?')} verdicts, {int((previous.get('approval_rate') or 0) * 100)}% approval rate
 """
 
-    prompt = f"""Analyze this Shopify print-on-demand store:
+    prompt = f"""Analyze this print-on-demand business selling on Shopify and Etsy:
 
-CURRENT STORE DATA:
+SHOPIFY CHANNEL:
 - Total products: {len(products)} ({active_count} active, {draft_count} draft)
 - Total orders: {len(orders)}
 - Revenue (paid orders): ${revenue:.2f}
 
-TOP PRODUCTS:
+TOP SHOPIFY PRODUCTS:
 {top_str}
-
+{etsy_str}
 PIPELINE METRICS:
 - Briefs researched: {pipeline['briefs_run']}
 - Verdicts collected: {pipeline['verdicts_collected']} ({pipeline['approved']} approved, {pipeline['rejected']} rejected)
 - Approval rate: {int(pipeline['approval_rate'] * 100)}%
 {prev_str}
 Generate a concise analytics report with:
-1. Key highlights (what's working)
+1. Key highlights (what's working, across both channels)
 2. Concerns (what needs attention)
 3. Top 2-3 recommendations{"4. Changes since last report (call out key deltas)" if previous else ""}"""
 
@@ -213,17 +227,27 @@ def _save_report(data: dict) -> str:
         for p in (data.get("top_products") or [])[:15]
     ) or "- No products yet"
 
-    pipeline = data.get("pipeline", {})
+    pipeline  = data.get("pipeline", {})
+    etsy_info = data.get("etsy")
+    etsy_md = ""
+    if etsy_info:
+        etsy_md = f"""
+## Etsy Channel
+- Active listings: {etsy_info.get('active_listings', 0)}
+- Total orders: {etsy_info.get('orders_total', 0)}{fmt_delta('etsy_orders_total')}
+- Revenue (paid): ${etsy_info.get('revenue_total', 0):.2f}{fmt_delta('etsy_revenue_total')}
+"""
+
     md = f"""# Analytics Report — {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC {prev_note}
 
-## Store Overview
+## Shopify Channel
 - Total Products: {data['products_total']}{fmt_delta('products_total')} ({data['products_active']} active{fmt_delta('products_active')}, {data['products_draft']} draft)
 - Total Orders: {data['orders_total']}{fmt_delta('orders_total')}
 - Revenue (paid): ${data['revenue_total']:.2f}{fmt_delta('revenue_total')}
 
-## Product Performance
+## Shopify Product Performance
 {products_md}
-
+{etsy_md}
 ## Pipeline Metrics
 - Briefs run: {pipeline.get('briefs_run', 0)}{fmt_delta('briefs_run')}
 - Verdicts collected: {pipeline.get('verdicts_collected', 0)} ({pipeline.get('approved', 0)} approved, {pipeline.get('rejected', 0)} rejected){fmt_delta('verdicts_collected')}
@@ -282,6 +306,23 @@ async def run_analytics() -> dict:
         if o.get("financial_status") in ("paid", "partially_paid")
     ), 2)
 
+    # Etsy data — gracefully skip if not configured or tokens expired
+    etsy_data: dict | None = None
+    if etsy.is_configured():
+        try:
+            etsy_listings  = await etsy.fetch_listings(state="active")
+            etsy_receipts  = await etsy.fetch_receipts()
+            etsy_paid      = [r for r in etsy_receipts if r.get("was_paid")]
+            etsy_revenue   = round(sum(float(r.get("grandtotal", {}).get("amount", 0)) / 100
+                                       for r in etsy_paid), 2)
+            etsy_data = {
+                "active_listings": len(etsy_listings),
+                "orders_total":    len(etsy_receipts),
+                "revenue_total":   etsy_revenue,
+            }
+        except Exception as e:
+            print(f"[analytics] Etsy fetch skipped: {e}")
+
     delta: dict = {}
     if previous:
         delta["products_total"] = _compute_delta(len(products), previous.get("products_total"))
@@ -294,8 +335,11 @@ async def run_analytics() -> dict:
             round(pipeline["approval_rate"] * 100),
             round((previous.get("approval_rate") or 0) * 100),
         )
+        if etsy_data and previous.get("etsy_orders_total") is not None:
+            delta["etsy_orders_total"]  = _compute_delta(etsy_data["orders_total"],  previous.get("etsy_orders_total"))
+            delta["etsy_revenue_total"] = _compute_delta(etsy_data["revenue_total"], previous.get("etsy_revenue_total"))
 
-    insights, model_used = await _synthesize_insights(products, orders, pipeline, product_stats, previous)
+    insights, model_used = await _synthesize_insights(products, orders, pipeline, product_stats, previous, etsy_data)
 
     data = {
         "products_total": len(products),
@@ -305,10 +349,13 @@ async def run_analytics() -> dict:
         "revenue_total": revenue,
         "top_products": product_stats[:15],
         "pipeline": pipeline,
+        "etsy": etsy_data,
+        "etsy_orders_total":  (etsy_data or {}).get("orders_total"),
+        "etsy_revenue_total": (etsy_data or {}).get("revenue_total"),
         "delta": delta,
         "insights": insights,
         "model_used": model_used,
-        "report_date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "report_date": datetime.now(_CST).strftime("%Y-%m-%d"),
         "previous_report_date": previous.get("report_date") if previous else None,
     }
 

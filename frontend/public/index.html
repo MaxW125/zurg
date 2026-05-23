@@ -72,14 +72,14 @@
 
     <!-- Pricing Room -->
     <div class="room" id="room-pricing" onclick="openPanel('pricing')" style="cursor:pointer">
-      <div class="pricing-icon">💰</div>
+      <div class="room-icon">💰</div>
       <div class="room-label">PRICING ROOM</div>
       <div class="room-hint">[ CLICK FOR PRICING ]</div>
     </div>
 
     <!-- CS Room -->
     <div class="room" id="room-cs" onclick="openPanel('cs')" style="cursor:pointer">
-      <div class="cs-icon">🎧</div>
+      <div class="room-icon">🎧</div>
       <div class="room-label">CS ROOM</div>
     </div>
 
@@ -87,25 +87,25 @@
 
     <!-- Shop Health Room -->
     <div class="room" id="room-shophealth" onclick="openPanel('shophealth')" style="cursor:pointer">
-      <div class="shophealth-icon">🏥</div>
+      <div class="room-icon">🏥</div>
       <div class="room-label">SHOP HEALTH ROOM</div>
       <div class="room-hint">[ CLICK FOR SEO AUDIT ]</div>
     </div>
 
     <!-- War Room -->
-    <div class="room" id="room-warroom" onclick="openPanel('warroom')">
+    <div class="room" id="room-warroom" onclick="openPanel('warroom')" style="cursor:pointer">
       <div class="room-icon">⚔️</div>
       <div class="room-label">WAR ROOM</div>
     </div>
 
     <!-- Monitoring Room -->
-    <div class="room" id="room-monitoring" onclick="openPanel('monitoring')">
+    <div class="room" id="room-monitoring" onclick="openPanel('monitoring')" style="cursor:pointer">
       <div class="room-icon">🖥️</div>
       <div class="room-label">MONITORING</div>
     </div>
 
-    <!-- Radar Bay (coming soon) -->
-    <div class="room" id="room-mediabay" onclick="openPanel('mediabay')">
+    <!-- Media Bay -->
+    <div class="room" id="room-mediabay" onclick="openPanel('mediabay')" style="cursor:pointer">
       <div class="room-icon">📱</div>
       <div class="room-label">MEDIA BAY</div>
     </div>
@@ -113,13 +113,13 @@
     <!-- ── ROW 3 ── -->
 
     <!-- Armory -->
-    <div class="room" id="room-armory" onclick="openPanel('armory')">
+    <div class="room" id="room-armory" onclick="openPanel('armory')" style="cursor:pointer">
       <div class="room-icon">⚔️</div>
       <div class="room-label">ARMORY</div>
     </div>
 
     <!-- Radar Bay -->
-    <div class="room" id="room-radarbay" onclick="openPanel('radarbay')">
+    <div class="room" id="room-radarbay" onclick="openPanel('radarbay')" style="cursor:pointer">
       <div class="room-icon">📡</div>
       <div class="room-label">RADAR BAY</div>
     </div>
@@ -142,6 +142,21 @@
     <canvas id="sprite-zurg" width="160" height="160" onclick="openPanel('ceo')"></canvas>
     <img class="sprite-char" id="sprite-researcher" src="/assets/researcher-sprite.png" alt="Researcher" draggable="false" onclick="openPanel('research')">
     <img class="sprite-char" id="sprite-designer" src="/assets/designer-sprite.png" alt="Designer" draggable="false" onclick="openPanel('design')">
+
+    <!-- Agent sprites for built rooms (canvas-drawn pixel art) -->
+    <canvas class="sprite-agent" id="sprite-factory"    width="96" height="120" onclick="openPanel('factory')"></canvas>
+    <canvas class="sprite-agent" id="sprite-approval"   width="96" height="120" onclick="openPanel('approval')"></canvas>
+    <canvas class="sprite-agent" id="sprite-analytics"  width="96" height="120" onclick="openPanel('analytics')"></canvas>
+    <canvas class="sprite-agent" id="sprite-pricing"    width="96" height="120" onclick="openPanel('pricing')"></canvas>
+    <canvas class="sprite-agent" id="sprite-cs"         width="96" height="120" onclick="openPanel('cs')"></canvas>
+    <canvas class="sprite-agent" id="sprite-shophealth" width="96" height="120" onclick="openPanel('shophealth')"></canvas>
+    <canvas class="sprite-agent" id="sprite-warroom"    width="96" height="120" onclick="openPanel('warroom')"></canvas>
+    <canvas class="sprite-agent" id="sprite-monitoring" width="96" height="120" onclick="openPanel('monitoring')"></canvas>
+    <canvas class="sprite-agent" id="sprite-mediabay"   width="96" height="120" onclick="openPanel('mediabay')"></canvas>
+    <canvas class="sprite-agent" id="sprite-armory"     width="96" height="120" onclick="openPanel('armory')"></canvas>
+    <canvas class="sprite-agent" id="sprite-radarbay"   width="96" height="120" onclick="openPanel('radarbay')"></canvas>
+    <canvas class="sprite-agent" id="sprite-memory"     width="96" height="120" onclick="openPanel('memory')"></canvas>
+    <canvas class="sprite-agent" id="sprite-treasury"   width="96" height="120" onclick="openPanel('treasury')"></canvas>
 
   </div><!-- end #map -->
   </div><!-- end #map-viewport -->

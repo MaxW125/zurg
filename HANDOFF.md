@@ -4,6 +4,150 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-23 — First Full Auto Day Bug Fixes (DONE)
+
+### What We Fixed
+
+This session was all bug fixes on the first day of full autonomous production mode.
+
+**1. Radar Bay crash — `UnboundLocalError: model_used`**
+- `model_used = "claude"` was only assigned inside the `except` branch; when `call_claude` succeeded it was never set and line 277 blew up with UnboundLocalError.
+- Fix: moved `model_used = "claude"` to before the try/except in `radar_bay_mvp.py`.
+
+**2. Analytics crash — `TypeError: NoneType.__format__`**
+- Old reports (before Etsy integration) have `etsy_revenue_total: null` in JSON. `previous.get('etsy_revenue_total', 0)` returns `None` when the key exists with a null value (default only fires when key is missing). `None:.2f` throws TypeError.
+- Fix: changed to `(previous.get('etsy_revenue_total') or 0):.2f` in `analytics_room_mvp.py`.
+
+**3. 8am daily report not sent**
+- War Room crashed at 7am (model_used bug above). Then CEO cron at 8am received an empty response from `/api/chat/ceo/instruct` (LLM cap was hit) and silently dropped it — no WhatsApp text sent.
+- Fix: `cron_runner.py` now sends a WhatsApp warning if the CEO endpoint returns an error or an empty response, so you know something went wrong instead of silence.
+
+**4. Daily spend cap not resetting — timezone mismatch (root cause of missed productions)**
+- Treasury stored timestamps in UTC (`datetime.utcnow()`) but `get_today_spend()` compared against `date.today()` which is local CDT (UTC-5). Any costs after 7pm CDT were timestamped as the next UTC day and counted against that day's $5 cap. Training runs from the night before were eating the production budget before autonomous mode even ran.
+- Fix: Treasury now uses CST (UTC-6) for both timestamp storage AND the daily cap check. Both reset consistently at midnight CST, same as the researcher loop.
+- Today's blown cap was manually zeroed via a credit entry (`model: daily-reset-credit`) so production could resume immediately.
+
+**5. All rooms now use CST for dates**
+- All `run_date`/`report_date` fields in analytics, war_room, radar_bay, shop_health, cs, pricing now use `datetime.now(_CST)`.
+- `cron_runner.py` weekly log date and Sunday check now use CST.
+- Items left as UTC intentionally: Shopify/Etsy API timestamp comparisons (both sides UTC), chat history timestamps, approval verdict timestamps.
+
+**6. Shopify 401 "factory failed" notifications**
+- The factory was making TWO Shopify products: one via Printify's OAuth (active listing — this worked), and one via direct Shopify API (draft — this failed 401 because `SHOPIFY_ACCESS_TOKEN` in `.env` is invalid/expired).
+- The 401 on the direct Shopify API call propagated up to the outer try/except in `rooms.py` and fired a "factory failed" WhatsApp each time.
+- Fix: removed the entire direct Shopify API code path from `factory_room_mvp.py`. Shopify now goes through Printify exclusively (same pattern as Etsy): create product → publish via Printify OAuth → poll for Shopify URL from Printify's `external` field.
+- `SHOPIFY_ACCESS_TOKEN` is no longer used for product creation.
+
+**7. Product catalog updated**
+- Removed: Poster (282), Tough Phone Case (269), Throw Pillow (1572)
+- Added: Tumbler (353/provider 1), Die-Cut Sticker (600/provider 73), Classic Dad Cap (1447/provider 99)
+
+**8. Market intel now data-driven**
+- `market_intel.py` ranks product types by avg Etsy favorites. Researcher system prompt updated to follow the ranking. Researcher identity updated to remove hardcoded category bias.
+
+**9. Approval room — phases removed, TODAY counter added**
+- Phase 1/2/3 system removed from the UI. Replaced with TODAY: X/5 and NEXT RUN: countdown.
+- Daily reset at midnight CST. The countdown shows time until midnight CST when cap is hit.
+
+**10. Spam publishing fix (defense in depth)**
+- Frontend: `state.autoDecidePending` lock prevents `_runAutoApprove()` from firing twice.
+- Backend: `_last_auto_decided_image` global + 409 dedup on `/api/approval/auto-decide`.
+
+**11. Background removal**
+- Settled on: Imagen prompted for solid magenta (#FF00FF) background → flood-fill from edges (tol=60) → tight global pass (tol=30) against detected corner color. Handles Imagen's color drift, enclosed regions (letter holes, mug handles), and doesn't eat real artwork colors.
+- rembg was tried and removed — too aggressive on flat illustrations.
+
+**12. Upgraded to Imagen 4 full**
+- `IMAGEN_MODEL = "imagen-4.0-generate-001"` (was `imagen-4.0-fast-generate-001`).
+- Cost updated to `$0.04/image` in Treasury.
+
+### Current State
+- **Autonomous mode**: ON, 5/day cap, 240min delay, resets midnight CST
+- **Products publishing**: working — Printify OAuth to both Shopify (active) and Etsy (active)
+- **Treasury**: CST timestamps, $5/day cap, resets midnight CST
+- **Cron**: all jobs using CST dates, 8am briefing has proper error alerting
+- **War Room**: fixed (model_used bug)
+- **Radar Bay**: fixed (model_used bug)  
+- **Analytics**: fixed (NoneType bug, Etsy data in reports)
+- **Factory**: no more 401 — direct Shopify API removed entirely
+
+### Known Issues / Watch List
+- **Shopify URL polling**: After removing the direct Shopify API, the Shopify product URL is now polled from Printify's `external.handle` field (same as Etsy). Needs to be verified that Printify actually populates this field for Shopify products — if it doesn't, the notification will show the store root URL instead of the specific product URL. Not a blocking issue, products still publish fine.
+- **0 variants warning**: Logs occasionally show `preferred_color='black', 0 variants in enabled set of N`. This means the preferred color wasn't found in Printify's variant list for that product. Product still gets created with all available variants, just not prioritized by color. Happens most with newer blueprints (sticker, cap). Not a blocking issue.
+- **Everbee**: Still returning 401 (Open API approval pending). Market data falls back to Etsy API which is working.
+- **Direct Etsy API publishing**: Still blocked by `readiness_state_id` requirement. Infrastructure exists in `etsy_client.py` — just needs Production Partner ID set up in Etsy Dashboard.
+
+### What's Next
+This was a pure bug-fix session. The next session should also be bug fixes — check what broke overnight and fix it. Key things to verify after first full autonomous day:
+- Did midnight CST reset work correctly?
+- Did the 8am briefing send successfully?
+- Are Shopify product URLs showing correctly in notifications?
+- Any new errors in `~/zurg/logs/server.log` or `~/zurg/logs/cron.log`?
+
+---
+
+## Session: 2026-05-21 — Etsy Fix, Prod Cleanup, Training Start (DONE)
+
+### What We Did
+
+**Etsy publishing fixed (root cause resolved):**
+- Old flow: publish immediately → mockups appear after → URL poll → retry. Failed because Etsy rejects listings with no images.
+- New flow: `create_product()` → poll for mockups up to 180s → publish once with images ready → poll URL 150s. First publish now succeeds every time.
+- Removed retry logic (was a band-aid). Removed false "failed" WhatsApp notification.
+- Extended URL polling from 30s → 150s. If URL still not found after 150s, falls back to shop URL silently (listing is live, just slow to surface in Printify API).
+
+**Direct Etsy API publishing (attempted, blocked):**
+- Built full infrastructure: `agents/etsy_client.py` (OAuth 2.0 token management, auto-refresh, `create_listing()`, `upload_listing_image()`, shipping profile matching), `routers/etsy_auth.py` (one-time browser OAuth flow at `/auth/etsy`), OAuth tokens saved in `.env`.
+- Blocked by Etsy API requiring `readiness_state_id` on all physical listings. This ID is shop-specific and tied to Production Partners. The API endpoint to create production partners returns 404 (requires manual setup in Etsy Seller Dashboard).
+- Factory rolled back to Printify publishing (working). All infrastructure kept for when unblocked.
+- **To finish:** Etsy Dashboard → Shop Manager → Settings → Production Partners → add Printify → fetch ID from `GET /v3/application/shops/<ETSY_SHOP_ID>/production-partners` → set in `etsy_client.py` → swap factory flow to `etsy_client.create_listing()`.
+
+**Treasury improvements:**
+- `append_fixed_cost_entry()` added to `treasury_mvp.py` for flat-rate costs.
+- Designer logs `$0.02` per Imagen generation (`model: imagen-4-fast`).
+- Factory logs `$0.20` per Etsy listing published (`model: etsy-listing-fee`).
+
+**Monitoring improvements:**
+- Imagen API health check added — polls `generativelanguage.googleapis.com` for Imagen 4 Fast reachability. Shows in Monitoring Room alongside Anthropic/Shopify/Etsy.
+
+**Pipeline failure notifications:**
+- `notify()` added to researcher on cycle error and designer trigger failure.
+- `notify()` added to designer if Imagen call fails — WhatsApp fires immediately so Max knows pipeline is stalled.
+
+**Researcher rate limit:**
+- Reduced from 6/day → 5/day (keeps Etsy fees at $1/day).
+- Config file updated at `rooms/research/research_config.json`.
+
+**Printify-Shopify reconnected:**
+- Max reconnected in Printify Dashboard → Store Settings → Kraken & Co. Shopify fulfillment now linked.
+
+**Clean brain reset for training:**
+- All dev briefs, verdicts, generated images, treasury ledger, last_brief.json, last_design.json wiped.
+- System started fresh for real training data collection.
+
+### Current State
+- Researcher: autonomous=false (Max controls when to turn on), 5/day cap, 240min delay
+- Etsy publishing: working via Printify mockup-first flow
+- Shopify: working, Printify fulfillment reconnected
+- Treasury: clean ledger, $5/day cap, Imagen + Etsy fees tracked
+- Monitoring: 6 API checks (Server, Shopify, Printify Etsy, Etsy API, Anthropic, Imagen)
+- All failure paths send WhatsApp notifications
+- Brain: clean — 0 briefs, 0 verdicts, 0 generated images
+
+### What's Next
+- **Training phase** — Max is approving real designs to build verdict history toward Phase 2 (100 verdicts). Frontend UI work is safe to do in parallel (no server restart needed, just hard refresh).
+- **Frontend session** — see prompt below in HANDOFF for what to build next session
+- **Direct Etsy API** — one Etsy dashboard action away from working (add Printify as Production Partner), then finish wiring in `etsy_client.py`
+- **Ideogram fallback** — if Imagen goes down, pipeline stalls (WhatsApp fires now, but no auto-retry with different model)
+
+### Gotchas
+- Researcher autonomous mode is OFF — turn on via `POST /api/rooms/research/config` with `{"autonomous": true}` or through the Research Room panel
+- `etsy_client.py` and OAuth tokens are live in `.env` but factory is NOT using them yet — factory still uses Printify publish
+- The `readiness_state_id` blocker is a Etsy dashboard action, not a code problem
+- Printify-Shopify was disconnected all session — now reconnected, but first Shopify order will be the real test of fulfillment
+
+---
+
 ## Session: 2026-05-21 — Factory Mockup & Etsy Fix (IN PROGRESS — testing)
 
 ### What We Fixed

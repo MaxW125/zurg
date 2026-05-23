@@ -23,7 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from routers import chat, rooms, approval, analytics, pricing, cs, shop_health, war_room, monitoring, media_bay, radar_bay, armory, treasury, memory
+from routers import chat, rooms, approval, analytics, pricing, cs, shop_health, war_room, monitoring, media_bay, radar_bay, armory, treasury, memory, etsy_auth
 app.include_router(chat.router)
 app.include_router(rooms.router)
 app.include_router(approval.router)
@@ -38,6 +38,7 @@ app.include_router(radar_bay.router)
 app.include_router(armory.router)
 app.include_router(treasury.router)
 app.include_router(memory.router)
+app.include_router(etsy_auth.router)
 
 
 @app.get("/health")

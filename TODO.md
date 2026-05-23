@@ -43,12 +43,27 @@
 - [x] **Etsy API — monitoring** — Monitoring Room now checks Etsy API key health alongside all other systems.
 
 **P2 — Makes the system production-ready**
-- [ ] LLM audit — right model per agent; Haiku for simple tasks (intent classification, acks), Sonnet for complex (research, briefings). Crosses off the LLM split Final Vision item. See HANDOFF for full breakdown of which agents must stay on Sonnet vs safe for Haiku.
-- [ ] **Researcher Room — LLM + data size overhaul** — the Researcher is the most context-heavy agent: it receives up to ~3000 chars of Etsy market data + the research prompt, then must return strict JSON. Three things to fix together: (1) switch to Sonnet so JSON output is reliable, (2) truncate/summarise Etsy market data before injecting into prompt so it never overflows, (3) consider streaming the brief back so long runs don't time out in the browser. The `_parse_brief()` key-alias normalisation is already in place as a safety net.
-- [ ] **Dynamic Etsy search keywords** — `market_intel.py` currently uses 16 hardcoded keyword searches (e.g. "funny animal shirt", "hobby niche mug"). These are static and don't react to what's actually trending. Replace with dynamically generated search terms: use the LLM to produce a fresh set of search keywords each run based on current season, recent cultural moments, and top-level Etsy category trends. This makes the Researcher genuinely reactive to what's hot right now rather than always searching the same broad terms.
-- [ ] Etsy order/revenue data — requires OAuth 2.0 flow (separate from API key). Would unlock Etsy sales in Analytics Room and CS Room. Build when store has real orders.
-- [ ] **Direct Etsy publishing (bypass Printify-Etsy integration)** — Current issue: Printify's Etsy OAuth connection expires periodically and requires manual reconnection through the Printify dashboard browser UI. There is no API to reconnect it, so it can't be automated. Proposed fix: bypass Printify entirely for the Etsy channel and post listings directly to the Etsy API. ETSY_API_KEY and ETSY_SHARED_SECRET are already in .env. Do a one-time OAuth 2.0 flow to get an access token + refresh token, store them in .env, and auto-refresh the access token (expires hourly) transparently in the client. Factory would call a new `etsy_client.py` to create listings directly (title, description, tags, price, images, shipping profile, return policy). Etsy refresh tokens are long-lived and never expire unless revoked — fully autonomous once set up. Removes the Printify-Etsy dependency entirely.
-- [ ] Ideogram + Flux image fallbacks — Imagen fails silently right now; fallbacks mean designs never get stuck
+- [x] LLM audit — Haiku for simple tasks, Sonnet for complex/JSON. Done across all 13 agents. See HANDOFF 2026-05-20.
+- [x] **Researcher Room — LLM + data size overhaul** — switched to Sonnet, market data capped at 2000 chars, dynamic search keywords generated each run. Done.
+- [x] **Dynamic Etsy search keywords** — `market_intel.py` generates fresh search terms each run via Haiku. Done.
+- [x] **Imagen cost logging** — designer logs $0.02 per image to Treasury under `model: imagen-4-fast`. Done.
+- [x] **Imagen API health check** — Monitoring Room now checks Imagen 4 Fast alongside Anthropic/Shopify/Etsy. Done.
+- [x] **Pipeline failure notifications** — WhatsApp alert fires if Imagen fails mid-run or researcher hits a cycle error. Done.
+- [x] **Etsy publishing fixed** — mockup-first flow: polls up to 180s for mockups BEFORE publishing, so Etsy always gets images on first attempt. No more "Publishing error". URL polling extended to 150s. Done.
+- [x] **Etsy listing fee in Treasury** — $0.20 logged per successful Etsy publish. Done.
+- [ ] **Direct Etsy publishing (bypass Printify-Etsy integration)** — Infrastructure 90% built: `agents/etsy_client.py`, `routers/etsy_auth.py`, OAuth tokens in `.env`, shipping profile matching. **Blocked** by Etsy API requiring `readiness_state_id` — shop-specific ID tied to Production Partners, can't be created via API. **To unblock:** Etsy Seller Dashboard → Shop Manager → Settings → Production Partners → add Printify manually → fetch ID from `GET /v3/application/shops/<ETSY_SHOP_ID>/production-partners` → hardcode in `etsy_client.py` → swap factory Etsy flow back to `etsy_client.create_listing()` + `upload_listing_image()`.
+- [x] **Product catalog updated** — Removed Poster, Tough Phone Case, Throw Pillow. Added Tumbler (353), Die-Cut Sticker (600), Classic Dad Cap (1447).
+- [x] **Market intel data-driven** — `market_intel.py` ranks product types by avg Etsy favorites. Researcher follows ranking dynamically.
+- [x] **Treasury timezone fix** — All timestamps and daily cap checks now use CST (UTC-6). Previously UTC timestamps vs local date comparison caused training costs to bleed into next day's budget.
+- [x] **All rooms use CST** — `run_date`/`report_date` fields across all room agents, cron_runner weekly log + Sunday check all use CST.
+- [x] **Shopify factory 401 fixed** — Removed direct Shopify API from factory. Shopify listings now created via Printify OAuth exclusively (same pattern as Etsy). `SHOPIFY_ACCESS_TOKEN` no longer required for publishing.
+- [x] **Approval phases removed** — Phase 1/2/3 system replaced with TODAY: X/5 counter + NEXT RUN countdown. Midnight CST reset.
+- [x] **Spam publish defense** — Frontend `autoDecidePending` lock + backend 409 dedup on `/api/approval/auto-decide`.
+- [x] **Background removal settled** — Magenta prompt + flood-fill from edges (tol=60) + global pass (tol=30) vs detected corner color. rembg removed.
+- [x] **Upgraded to Imagen 4 full** — `imagen-4.0-generate-001`, $0.04/image in Treasury.
+- [x] **8am cron briefing error alerting** — CEO cron now sends WhatsApp warning if briefing endpoint errors or returns empty.
+- [ ] Etsy order/revenue data — requires OAuth 2.0 flow. Build when store has real orders.
+- [ ] Ideogram + Flux image fallbacks — Imagen fallback if Google API goes down
 - [ ] Gelato fulfilment fallback — Printify backup
 - [ ] Reviews integration — Judge.me or Yotpo
 

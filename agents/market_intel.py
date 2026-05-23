@@ -31,14 +31,14 @@ _ETSY_MARKET_QUERIES_FALLBACK = [
     ("novelty mug gift idea",           "Ceramic Mug"),
     ("canvas tote bag gift",            "Tote Bag"),
     ("book lover tote bag",             "Tote Bag"),
-    ("wall art print home decor",       "Poster"),
-    ("motivational poster gift",        "Poster"),
-    ("funny phone case gift",           "Tough Phone Case"),
-    ("cute niche phone case",           "Tough Phone Case"),
+    ("funny tumbler gift",              "Tumbler"),
+    ("novelty drinkware gift niche",    "Tumbler"),
+    ("funny die cut sticker",           "Die-Cut Sticker"),
+    ("cute niche laptop sticker",       "Die-Cut Sticker"),
     ("funny apron gift kitchen",        "Cotton Apron"),
     ("novelty cooking apron gift",      "Cotton Apron"),
-    ("funny throw pillow home decor",   "Throw Pillow"),
-    ("decorative pillow gift niche",    "Throw Pillow"),
+    ("niche dad hat gift",              "Classic Dad Cap"),
+    ("hobby baseball cap gift",         "Classic Dad Cap"),
 ]
 
 
@@ -52,10 +52,10 @@ Generate 2 Etsy search queries for EACH of these product types:
 - Apparel (T-Shirt, Hoodie, Sweatshirt)
 - Ceramic Mug
 - Tote Bag
-- Poster
-- Tough Phone Case
+- Tumbler
+- Die-Cut Sticker
 - Cotton Apron
-- Throw Pillow
+- Classic Dad Cap
 
 Each query must be 3-6 words that would surface listings that are:
 - Relevant to the current season or upcoming events (it's {today})
@@ -215,6 +215,23 @@ def _fetch_etsy_market(queries: list[tuple[str, str]]) -> str:
     all_listings.sort(key=lambda x: x.get("num_favorers", 0), reverse=True)
     top = all_listings[:30]
 
+    # Rank product types by average favorites across their listings
+    from collections import defaultdict
+    pt_favs: dict = defaultdict(list)
+    for item in all_listings:
+        pt = item.get("_product_type", "Unknown")
+        pt_favs[pt].append(item.get("num_favorers", 0))
+
+    pt_ranked = sorted(
+        [(pt, sum(favs) / len(favs), len(favs)) for pt, favs in pt_favs.items()],
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    ranking_lines = [
+        f"  {i+1}. {pt} — avg {avg:.0f} favorites ({count} listings sampled)"
+        for i, (pt, avg, count) in enumerate(pt_ranked)
+    ]
+
     # Count tag frequency across top listings
     tag_counter: Counter = Counter()
     for item in top:
@@ -227,15 +244,17 @@ def _fetch_etsy_market(queries: list[tuple[str, str]]) -> str:
     # Top 5 listing examples by favorites
     example_lines = []
     for item in all_listings[:5]:
-        title    = (item.get("title") or "")[:70]
-        fav      = item.get("num_favorers", 0)
-        pt       = item.get("_product_type", "")
-        tags     = (item.get("tags") or [])[:4]
-        tag_str  = ", ".join(tags)
+        title   = (item.get("title") or "")[:70]
+        fav     = item.get("num_favorers", 0)
+        pt      = item.get("_product_type", "")
+        tags    = (item.get("tags") or [])[:4]
+        tag_str = ", ".join(tags)
         example_lines.append(f'- "{title}" — {fav} fav | {pt} | tags: {tag_str}')
 
     lines = [
         f"=== Etsy Market Intelligence ({len(all_listings)} listings across {len(queries)} product searches) ===",
+        f"\nPRODUCT TYPE PERFORMANCE RANKING (by avg favorites — use this to pick product type):",
+    ] + ranking_lines + [
         f"\nTop recurring tags (by frequency in high-favorites listings):",
         tag_summary or "— no repeated tags found",
         f"\nTop listings by favorites:",

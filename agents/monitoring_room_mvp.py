@@ -16,6 +16,7 @@ PRINTIFY_ETSY_SHOP_ID   = os.getenv("PRINTIFY_ETSY_SHOP_ID", "")
 ETSY_API_KEY            = os.getenv("ETSY_API_KEY", "")
 ETSY_SHARED_SECRET      = os.getenv("ETSY_SHARED_SECRET", "")
 ETSY_SHOP_NAME          = os.getenv("ETSY_SHOP_NAME", "")
+GOOGLE_API_KEY          = os.getenv("GOOGLE_API_KEY", "")
 
 SHOPIFY_API_VERSION = "2025-01"
 STALE_HOURS = 24
@@ -67,6 +68,26 @@ async def _check_anthropic() -> dict:
             return {"status": "green", "detail": "API key valid"}
         if r.status_code == 401:
             return {"status": "red", "detail": "401 — API key invalid or revoked"}
+        return {"status": "yellow", "detail": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"status": "red", "detail": f"Connection failed: {str(e)[:80]}"}
+
+
+async def _check_imagen() -> dict:
+    if not GOOGLE_API_KEY:
+        return {"status": "yellow", "detail": "GOOGLE_API_KEY not set"}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                "https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-fast-generate-001",
+                params={"key": GOOGLE_API_KEY},
+            )
+        if r.status_code == 200:
+            return {"status": "green", "detail": "API key valid — Imagen 4 Fast reachable"}
+        if r.status_code == 400:
+            return {"status": "green", "detail": "API key valid — Imagen 4 Fast reachable"}
+        if r.status_code in (401, 403):
+            return {"status": "red", "detail": f"{r.status_code} — API key invalid or billing not enabled"}
         return {"status": "yellow", "detail": f"HTTP {r.status_code}"}
     except Exception as e:
         return {"status": "red", "detail": f"Connection failed: {str(e)[:80]}"}
@@ -222,11 +243,12 @@ async def get_latest_report() -> dict | None:
 
 
 async def run_monitoring() -> dict:
-    shopify, anthropic, printify_etsy, etsy_api = await asyncio.gather(
+    shopify, anthropic, printify_etsy, etsy_api, imagen = await asyncio.gather(
         _check_shopify(),
         _check_anthropic(),
         _check_printify_etsy(),
         _check_etsy_api(),
+        _check_imagen(),
     )
 
     systems = [
@@ -235,6 +257,7 @@ async def run_monitoring() -> dict:
         {"name": "Printify Etsy",    "key": "printify_etsy", **printify_etsy},
         {"name": "Etsy API",         "key": "etsy_api",      **etsy_api},
         {"name": "Anthropic API",    "key": "anthropic",     **anthropic},
+        {"name": "Imagen API",       "key": "imagen",        **imagen},
     ]
 
     for room_key, room_name in _BUILT_ROOMS:

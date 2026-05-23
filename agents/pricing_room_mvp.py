@@ -2,7 +2,9 @@ import asyncio
 import os
 import json
 import glob
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
 import httpx
@@ -240,7 +242,7 @@ async def run_pricing() -> dict:
     analysis, model_used = await _run_analysis(product_stats, market_intel)
 
     data = {
-        "run_date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "run_date": datetime.now(_CST).strftime("%Y-%m-%d"),
         "products_analysed": len(product_stats),
         "product_stats": product_stats,
         "market_intel": market_intel,

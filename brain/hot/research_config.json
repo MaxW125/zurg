@@ -1,5 +1,5 @@
 {
-  "autonomous": true,
+  "autonomous": false,
   "delay_minutes": 240,
   "max_per_day": 6,
   "products_today": 1,

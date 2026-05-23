@@ -8,9 +8,10 @@ from google import genai
 from google.genai import types
 from agents.llm_client import call_claude, call_claude_haiku
 from agents.brain import load_system_prompt, load_prompt
-
+from agents.treasury_mvp import append_fixed_cost_entry
+from agents.notify import notify
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
-IMAGEN_MODEL = "imagen-4.0-fast-generate-001"
+IMAGEN_MODEL = "imagen-4.0-generate-001"
 
 _PROMPT_FALLBACK = """You are a print-on-demand product designer. Given a niche research brief, you write a detailed image generation prompt for apparel and product designs.
 
@@ -24,9 +25,7 @@ Rules:
 - On the very last line write: SHIRT_COLOR: [best base color — choose from: black, white, navy, heather grey, forest green, red, royal blue]
 - Output the image prompt first, then SHIRT_COLOR on a new line. Nothing else."""
 
-TRANSPARENCY_SUFFIX = "isolated graphic on a solid bright magenta (#FF00FF) background, no background scene, no shadows, no environment, clean hard edges, sticker-style artwork"
-CHROMA_KEY = (255, 0, 255)  # magenta — remove this color to make background transparent
-CHROMA_TOLERANCE = 80       # how far from the detected background color a pixel can be and still get removed
+TRANSPARENCY_SUFFIX = "sticker-style isolated graphic on a solid bright magenta (#FF00FF) background, subject does not touch frame edges, hard clean vector edges with bold dark outline, no soft brush strokes or feathered edges, no shadows or environmental elements, simple bold composition, no magenta or hot-pink tones in the artwork"
 
 
 _COPY_PROMPT_FALLBACK = """Write Etsy product copy for a {PRODUCT_TYPE} in the "{NICHE}" niche.
@@ -170,13 +169,18 @@ async def run_designer(input: dict) -> dict:
             config=types.GenerateImagesConfig(number_of_images=1),
         )
 
-    response = await asyncio.get_event_loop().run_in_executor(None, _generate)
-    raw_bytes = response.generated_images[0].image.image_bytes
+    try:
+        response = await asyncio.get_event_loop().run_in_executor(None, _generate)
+        raw_bytes = response.generated_images[0].image.image_bytes
+    except Exception as imagen_err:
+        await notify(f"⚠️ Imagen failed — pipeline stalled\n{str(imagen_err)[:120]}")
+        raise
+    append_fixed_cost_entry("design", "imagen-4", 0.04)
 
-    # Step 3 — chroma key removal: sample the four corners to detect whatever
-    # background color Imagen actually rendered, then flood-fill from edges
-    # removing all pixels within tolerance of that color.
+    # Step 3 — background removal via rembg (neural net subject detection).
+    # Falls back to edge flood-fill if rembg fails.
     def _remove_bg():
+        from collections import deque
         img = Image.open(io.BytesIO(raw_bytes)).convert("RGBA")
         pixels = img.load()
         w, h = img.size
@@ -188,13 +192,14 @@ async def run_designer(input: dict) -> dict:
         cb = sum(c[2] for c in corners) // 4
         print(f"[designer] Background color detected: ({cr}, {cg}, {cb})")
 
-        def is_bg(px):
-            return (abs(px[0]-cr) <= CHROMA_TOLERANCE and
-                    abs(px[1]-cg) <= CHROMA_TOLERANCE and
-                    abs(px[2]-cb) <= CHROMA_TOLERANCE)
+        tol = 60
 
-        # Flood-fill from all edges so enclosed pockets (e.g. between legs) are also removed
-        from collections import deque
+        def is_bg(px):
+            return (abs(px[0]-cr) <= tol and
+                    abs(px[1]-cg) <= tol and
+                    abs(px[2]-cb) <= tol)
+
+        # Flood-fill from edges — removes outer background without touching interior
         visited = [[False]*h for _ in range(w)]
         queue = deque()
         for x in range(w):
@@ -215,13 +220,19 @@ async def run_designer(input: dict) -> dict:
                     visited[nx][ny] = True
                     queue.append((nx,ny))
 
-        # Global pass: remove any remaining background-colored pixels (letter holes,
-        # enclosed counters in A/D/O, any spots the flood-fill couldn't reach from edges)
+        # Tight global pass using the detected background color — catches enclosed pockets
+        # (letter holes, gaps between legs, mug handles) unreachable from edges.
+        # Tolerance 30 against the actual sampled color keeps it safe: orange deviates
+        # by ~165 on G, blue by ~255 on R, so no real artwork color gets caught.
+        enc_tol = 30
         for y in range(h):
             for x in range(w):
-                px = pixels[x, y]
-                if px[3] > 0 and is_bg(px):
-                    pixels[x, y] = (px[0], px[1], px[2], 0)
+                r, g, b, a = pixels[x, y]
+                if (a > 0
+                        and abs(r - cr) <= enc_tol
+                        and abs(g - cg) <= enc_tol
+                        and abs(b - cb) <= enc_tol):
+                    pixels[x, y] = (r, g, b, 0)
 
         buf = io.BytesIO()
         img.save(buf, format="PNG")

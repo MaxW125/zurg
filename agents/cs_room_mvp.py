@@ -1,6 +1,8 @@
 import os
 import json
 from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude_haiku
 from agents.brain import load_system_prompt
 import httpx
@@ -249,7 +251,7 @@ async def run_cs() -> dict:
     attention, review_queue, model_used = await _draft_messages(attention, review_queue, system)
 
     data = {
-        "run_date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "run_date": datetime.now(_CST).strftime("%Y-%m-%d"),
         "orders_scanned": len(orders),
         "attention_orders": attention,
         "review_queue": review_queue,

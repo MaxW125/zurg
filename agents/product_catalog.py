@@ -8,14 +8,14 @@ Blueprint IDs confirmed working:
   49   — Gildan Heavy Blend Crewneck Sweatshirt (provider 39: SwiftPOD)
   478  — Ceramic Mug 11oz/15oz                 (provider 29: Monster Digital)
   1313 — Cotton Canvas Tote Bag                (provider 29: Monster Digital)
-  282  — Matte Vertical Poster                 (provider 2:  Sensaria)
-  269  — Tough Phone Cases                     (provider 1:  SPOKE Custom Products)
+  353  — Tumbler 20oz                          (provider 1:  SPOKE Custom Products)
+  600  — Die-Cut Stickers                      (provider 73: Printed Simply)
+  1447 — Classic Dad Cap                       (provider 99: Printify Choice)
   713  — Cotton Apron                          (provider 6:  T Shirt and Sons)
-  1572 — Throw Pillow                          (provider 10: MWW On Demand)
 
 preferred_color: used to prioritise variant selection in create_product().
   Apparel: "black" (dark shirt shows most designs well)
-  Mugs/totes/posters: "white" (light surface for full-colour designs)
+  Mugs/totes/posters/tumblers: "white" (light surface for full-colour designs)
 """
 
 CATALOG: dict[str, dict] = {
@@ -61,19 +61,26 @@ CATALOG: dict[str, dict] = {
         "preferred_color": "natural",
         "default_colors":  ["natural", "white"],
     },
-    "Poster": {
-        "blueprint_id":    282,
-        "print_provider":  2,
+    "Tumbler": {
+        "blueprint_id":    353,
+        "print_provider":  1,
+        "position":        "front",
+        "preferred_color": "white",
+        "default_colors":  ["white", "black"],
+    },
+    "Die-Cut Sticker": {
+        "blueprint_id":    600,
+        "print_provider":  73,
         "position":        "front",
         "preferred_color": "white",
         "default_colors":  ["white"],
     },
-    "Tough Phone Case": {
-        "blueprint_id":    269,
-        "print_provider":  1,
+    "Classic Dad Cap": {
+        "blueprint_id":    1447,
+        "print_provider":  99,
         "position":        "front",
-        "preferred_color": "black",  # won't match phone model names — all models included
-        "default_colors":  ["black"],
+        "preferred_color": "black",
+        "default_colors":  ["black", "white", "navy"],
     },
     "Cotton Apron": {
         "blueprint_id":    713,
@@ -81,13 +88,6 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "black",
         "default_colors":  ["black", "white"],
-    },
-    "Throw Pillow": {
-        "blueprint_id":    1572,
-        "print_provider":  10,
-        "position":        "front",
-        "preferred_color": "white",
-        "default_colors":  ["white"],
     },
 }
 

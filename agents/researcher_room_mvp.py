@@ -8,6 +8,7 @@ from agents.llm_client import call_claude
 from agents.market_intel import gather_trends, get_seasonal_context
 from agents.product_catalog import PRODUCT_TYPES
 from agents.brain import load_system_prompt
+from agents.notify import notify
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 CONFIG_PATH = os.path.join(BRAIN_PATH, "rooms", "research", "research_config.json")
@@ -20,16 +21,7 @@ _SYSTEM_FALLBACK = """You are a print-on-demand market researcher. Find niches t
 - keywords: list of 5 search keywords (array of strings)
 - design_direction: one sentence describing what the design should look like — be specific about art style, subject, and any text/slogan
 
-Product selection guidance:
-- T-Shirt / Hoodie / Long Sleeve / Sweatshirt: passionate hobby/fandom communities, humor, identity
-- Ceramic Mug: workplace humor, pet lovers, "gift for X" niches — very high Etsy demand
-- Tote Bag: eco-conscious buyers, book lovers, farmers markets, nature/lifestyle niches
-- Poster: home decor, motivational quotes, art fans, room aesthetics
-- Tough Phone Case: younger audiences, fandoms, funny/cute niches, personality-driven designs
-- Cotton Apron: cooking humor, BBQ dads, dog moms, "wine o'clock", baking niches
-- Throw Pillow: home decor, pet portraits, quote niches, cosy/hygge aesthetics
-
-Pick the product type that fits the niche best, not just apparel by default."""
+The market intelligence report ranks product types by current Etsy performance. Follow that ranking — pick the product type with the strongest market signal for the niche you've chosen. Do not default to apparel if another product type is outperforming it."""
 
 
 def _parse_brief(raw: str) -> dict:
@@ -105,7 +97,7 @@ def load_config() -> dict:
     defaults = {
         "autonomous": False,
         "delay_minutes": 240,
-        "max_per_day": 6,
+        "max_per_day": 5,
         "products_today": 0,
         "last_run": None,
         "last_reset_date": None,
@@ -124,8 +116,14 @@ def save_config(config: dict) -> None:
         json.dump(config, f, indent=2)
 
 
+def _cst_today() -> str:
+    """Return today's date string in Central Standard Time (UTC-6)."""
+    from datetime import timezone, timedelta
+    cst = timezone(timedelta(hours=-6))
+    return datetime.now(cst).strftime("%Y-%m-%d")
+
 def _reset_if_new_day(config: dict) -> dict:
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = _cst_today()
     if config.get("last_reset_date") != today:
         config["products_today"] = 0
         config["last_reset_date"] = today
@@ -168,15 +166,13 @@ async def run_researcher(input: dict) -> dict:
 
     if direction:
         prompt = f"""Find a profitable print-on-demand niche based on this direction: "{direction}"{market_section}{seasonal_section}
-Pick a specific, passionate audience within that space. Choose the product type that fits best — consider mugs for gift/humor niches, tote bags for lifestyle niches, posters for art/decor niches, apparel for community/identity niches.
+Pick a specific, passionate audience within that space. Use the product type rankings in the market data to choose the best product — follow the signal, don't apply a fixed opinion.
 If upcoming events are listed, consider whether a seasonal angle strengthens the niche.
 Return the JSON brief."""
     else:
-        prompt = f"""Find a profitable print-on-demand niche. Use the live Etsy data below to identify what's actually resonating with buyers right now — look for recurring tags and high-favorites listings as your signal.{market_section}{seasonal_section}
-Go specific: e.g. "Border Collie agility training enthusiasts" or "ICU Nurse dark humor mugs". Avoid generic niches.
+        prompt = f"""Find a profitable print-on-demand niche. Use the live Etsy data below to identify what's actually resonating with buyers right now — the product type rankings show you what's performing strongest this week, follow them.{market_section}{seasonal_section}
+Go specific: e.g. "Border Collie agility training enthusiasts" or "ICU Nurse dark humor". Avoid generic niches.
 If upcoming events are listed, a seasonal angle can boost sales — but only use it if it genuinely fits the niche.
-Consider the full product range: mugs, tote bags, posters, phone cases, aprons, and throw pillows often sell as well as shirts.
-
 Return the JSON brief."""
 
     system = load_system_prompt("research", "researcher", _SYSTEM_FALLBACK).replace(
@@ -215,12 +211,13 @@ async def _autonomous_loop() -> None:
         config = _reset_if_new_day(config)
 
         if config["products_today"] >= config["max_per_day"]:
-            # Wait until midnight UTC then reset
-            now = datetime.utcnow()
-            seconds_until_midnight = (
-                (24 - now.hour - 1) * 3600 + (60 - now.minute - 1) * 60 + (60 - now.second)
-            )
-            print(f"[researcher] Daily cap reached ({config['max_per_day']}). Sleeping until midnight ({seconds_until_midnight}s)")
+            # Wait until midnight CST (UTC-6) then reset
+            from datetime import timezone, timedelta
+            cst = timezone(timedelta(hours=-6))
+            now_cst = datetime.now(cst)
+            next_midnight_cst = (now_cst + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            seconds_until_midnight = int((next_midnight_cst - now_cst).total_seconds())
+            print(f"[researcher] Daily cap reached ({config['max_per_day']}). Sleeping until midnight CST ({seconds_until_midnight}s)")
             await asyncio.sleep(seconds_until_midnight + 5)
             config = _reset_if_new_day(load_config())
 
@@ -246,9 +243,11 @@ async def _autonomous_loop() -> None:
                         print(f"[researcher] Design trigger failed: {r.status_code}")
             except Exception as e:
                 print(f"[researcher] Could not trigger designer: {e}")
+                await notify(f"⚠️ Designer failed to start for: {brief.get('niche', '?')}\n{str(e)[:120]}")
 
         except Exception as e:
             print(f"[researcher] Cycle error: {e}")
+            await notify(f"⚠️ Researcher cycle error: {str(e)[:120]}")
 
         delay = config.get("delay_minutes", 240) * 60
         print(f"[researcher] Sleeping {config.get('delay_minutes', 240)} minutes until next cycle")
@@ -288,20 +287,29 @@ def loop_status() -> dict:
     running = _loop_task is not None and not _loop_task.done()
 
     next_run_seconds = None
-    if running and config.get("last_run"):
-        try:
-            last = datetime.fromisoformat(config["last_run"])
-            elapsed = (datetime.utcnow() - last).total_seconds()
-            delay = config["delay_minutes"] * 60
-            next_run_seconds = max(0, int(delay - elapsed))
-        except Exception:
-            pass
+    if running:
+        cap_hit = config.get("products_today", 0) >= config.get("max_per_day", 5)
+        if cap_hit:
+            # Sleeping until midnight CST — show time until reset
+            from datetime import timezone, timedelta
+            cst = timezone(timedelta(hours=-6))
+            now_cst = datetime.now(cst)
+            next_midnight = (now_cst + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+            next_run_seconds = max(0, int((next_midnight - now_cst).total_seconds()))
+        elif config.get("last_run"):
+            try:
+                last = datetime.fromisoformat(config["last_run"])
+                elapsed = (datetime.utcnow() - last).total_seconds()
+                delay = config["delay_minutes"] * 60
+                next_run_seconds = max(0, int(delay - elapsed))
+            except Exception:
+                pass
 
     return {
         "running":           running,
         "autonomous":        config.get("autonomous", False),
         "delay_minutes":     config.get("delay_minutes", 240),
-        "max_per_day":       config.get("max_per_day", 6),
+        "max_per_day":       config.get("max_per_day", 5),
         "products_today":    config.get("products_today", 0),
         "last_run":          config.get("last_run"),
         "next_run_seconds":  next_run_seconds,

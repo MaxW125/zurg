@@ -1,7 +1,9 @@
 import os
 import json
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude_haiku
 from agents.brain import load_system_prompt
 import httpx
@@ -399,7 +401,7 @@ async def run_shop_health() -> dict:
     flagged_etsy    = [a for a in etsy_audits if a["issues"]]
 
     data = {
-        "run_date":           datetime.utcnow().strftime("%Y-%m-%d"),
+        "run_date":           datetime.now(_CST).strftime("%Y-%m-%d"),
         "products_scanned":   len(products),
         "flagged_count":      len(flagged_shopify),
         "etsy_scanned":       len(etsy_listings),

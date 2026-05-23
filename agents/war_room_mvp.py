@@ -1,6 +1,8 @@
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+_CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude_haiku
 from agents.brain import load_system_prompt
 
@@ -207,7 +209,7 @@ Synthesise this into a prioritised action plan. Output only the JSON specified."
         return result
 
     data = {
-        "run_date": datetime.utcnow().strftime("%Y-%m-%d %H:%M"),
+        "run_date": datetime.now(_CST).strftime("%Y-%m-%d %H:%M"),
         "model_used": model_used,
         "summary": plan.get("summary", ""),
         "fix": _flatten(plan.get("fix", [])),
