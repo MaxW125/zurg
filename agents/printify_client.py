@@ -99,6 +99,7 @@ async def create_product(
     tags: list[str] | None = None,
     preferred_color: str = "black",
     shop_id: str | None = None,
+    retail_price: int = 2999,
 ) -> dict:
     """
     Create a product on Printify with the uploaded design image.
@@ -145,7 +146,7 @@ async def create_product(
     variant_list = [
         {
             "id": v["id"],
-            "price": 2999,  # $29.99 in cents
+            "price": retail_price,
             "is_enabled": True,
         }
         for v in variants

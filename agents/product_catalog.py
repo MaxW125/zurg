@@ -25,6 +25,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "black",
         "default_colors":  ["black", "white", "navy"],
+        "retail_price":    2799,   # ~$13 base cost → $27.99 (~54% margin)
     },
     "Hoodie": {
         "blueprint_id":    9,
@@ -32,6 +33,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "black",
         "default_colors":  ["black", "navy", "dark heather"],
+        "retail_price":    4999,   # ~$23 base cost → $49.99 (~54% margin)
     },
     "Long Sleeve T-Shirt": {
         "blueprint_id":    11,
@@ -39,6 +41,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "black",
         "default_colors":  ["black", "white", "navy"],
+        "retail_price":    3299,   # ~$15 base cost → $32.99 (~55% margin)
     },
     "Crewneck Sweatshirt": {
         "blueprint_id":    49,
@@ -46,6 +49,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "black",
         "default_colors":  ["black", "navy", "dark heather"],
+        "retail_price":    3999,   # ~$18 base cost → $39.99 (~55% margin)
     },
     "Ceramic Mug": {
         "blueprint_id":    478,
@@ -53,6 +57,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "white",
         "default_colors":  ["white"],
+        "retail_price":    1999,   # ~$6 base cost → $19.99 (~70% margin)
     },
     "Tote Bag": {
         "blueprint_id":    1313,
@@ -60,6 +65,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "natural",
         "default_colors":  ["natural", "white"],
+        "retail_price":    2499,   # $9.77 base cost → $24.99 (~61% margin)
     },
     "Tumbler": {
         "blueprint_id":    353,
@@ -67,6 +73,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "white",
         "default_colors":  ["white", "black"],
+        "retail_price":    3499,   # ~$15 base cost → $34.99 (~57% margin)
     },
     "Die-Cut Sticker": {
         "blueprint_id":    600,
@@ -74,6 +81,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "white",
         "default_colors":  ["white"],
+        "retail_price":    999,    # $3.78 base cost → $9.99 (~62% margin)
     },
     "Classic Dad Cap": {
         "blueprint_id":    1447,
@@ -81,6 +89,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "black",
         "default_colors":  ["black", "white", "navy"],
+        "retail_price":    3999,   # $19.47 base cost → $39.99 (~51% margin)
     },
     "Cotton Apron": {
         "blueprint_id":    713,
@@ -88,6 +97,7 @@ CATALOG: dict[str, dict] = {
         "position":        "front",
         "preferred_color": "black",
         "default_colors":  ["black", "white"],
+        "retail_price":    4299,   # $20.45 base cost → $42.99 (~52% margin)
     },
 }
 

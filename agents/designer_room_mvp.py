@@ -14,6 +14,41 @@ BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 IMAGEN_MODEL = "imagen-4.0-generate-001"
 DESIGN_LOG_PATH = os.path.join(BRAIN_PATH, "rooms", "design", "design_log.jsonl")
 
+# Per-product composition constraints injected into both the Claude prompt-writing
+# request and directly into the final Imagen prompt as a hard constraint.
+# Apparel and stickers work fine with the default square composition — only
+# non-standard print areas need explicit rules.
+_PRODUCT_COMPOSITION_NOTES = {
+    "Classic Dad Cap": (
+        "CRITICAL — Hat front panel is wide and SHORT (roughly 2:1 width-to-height ratio). "
+        "Use a wide horizontal layout. All text and artwork must fit within the center 55% "
+        "of the frame HEIGHT — nothing near the top or bottom edges or it will be cropped. "
+        "Text must be large, bold, and fully readable when printed at 2 inches wide."
+    ),
+    "Ceramic Mug": (
+        "IMPORTANT — Design wraps around a cylinder. Use a horizontal composition. "
+        "Keep all key elements in the center 65% of frame width — nothing critical "
+        "near the left or right edges where the mug seam falls."
+    ),
+    "Tumbler": (
+        "IMPORTANT — Design wraps around a cylinder. Use a horizontal composition. "
+        "Keep all key elements in the center 65% of frame width — nothing critical "
+        "near the left or right edges where the seam wraps."
+    ),
+    "Cotton Apron": (
+        "IMPORTANT — Apron has a tall vertical print area. Use a centered vertical "
+        "composition. Main design element must be bold and readable from 3 feet away."
+    ),
+}
+
+# Terse version appended directly to the Imagen prompt as a hard layout constraint.
+_PRODUCT_IMAGEN_CONSTRAINTS = {
+    "Classic Dad Cap": "wide horizontal layout, all elements within center 55% of frame height, nothing near top or bottom edges, bold legible text",
+    "Ceramic Mug":     "horizontal wrap-friendly composition, all key elements in center 65% of frame width, nothing near left or right edges",
+    "Tumbler":         "horizontal wrap-friendly composition, all key elements in center 65% of frame width, nothing near left or right edges",
+    "Cotton Apron":    "centered vertical composition, bold and readable from 3 feet",
+}
+
 
 def _log_design(niche: str, product_type: str, slug: str) -> None:
     from datetime import timezone, timedelta
@@ -110,15 +145,19 @@ def _build_prompt_request(brief: dict) -> str:
         "Create a new design that directly addresses this feedback. Do not repeat the previous approach."
     ) if denial else ""
 
+    product_type = brief["product_type"]
+    composition_note = _PRODUCT_COMPOSITION_NOTES.get(product_type, "")
+    composition_section = f"\n\n{composition_note}" if composition_note else ""
+
     template = load_prompt("design", "designer", _IMAGE_PROMPT_FALLBACK)
     return (
         template
-        .replace("{PRODUCT_TYPE}", brief["product_type"])
+        .replace("{PRODUCT_TYPE}", product_type)
         .replace("{NICHE}", brief["niche"])
         .replace("{AUDIENCE}", brief.get("target_audience", ""))
         .replace("{DESIGN_DIRECTION}", brief.get("design_direction", ""))
         .replace("{KEYWORDS}", ", ".join(brief.get("keywords", [])))
-        .replace("{DENIAL_NOTE}", denial_section)
+        .replace("{DENIAL_NOTE}", denial_section + composition_section)
     )
 
 
@@ -175,6 +214,11 @@ async def run_designer(input: dict) -> dict:
     # Enforce transparency suffix even if LLM omits it
     if TRANSPARENCY_SUFFIX not in image_prompt:
         image_prompt = image_prompt.rstrip(". ") + ", " + TRANSPARENCY_SUFFIX
+
+    # Enforce product-specific composition constraint directly in the Imagen prompt
+    composition_constraint = _PRODUCT_IMAGEN_CONSTRAINTS.get(input.get("product_type", ""), "")
+    if composition_constraint and composition_constraint not in image_prompt:
+        image_prompt = image_prompt.rstrip(". ") + ", " + composition_constraint
 
     # Run sync Imagen call in thread so we don't block the event loop
     def _generate():

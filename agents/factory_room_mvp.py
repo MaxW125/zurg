@@ -109,6 +109,7 @@ async def run_factory(input: dict) -> dict:
                 tags=input.get("tags") or input.get("keywords", []),
                 preferred_color=shirt_color,
                 shop_id=etsy_shop_id,
+                retail_price=blueprint.get("retail_price", 2999),
             )
             etsy_pid          = ep["id"]
             etsy_preferred    = ep.get("_preferred_variant_ids", [])
@@ -194,6 +195,7 @@ async def run_factory(input: dict) -> dict:
             print_provider_id=blueprint["print_provider"],
             tags=input.get("tags") or input.get("keywords", []),
             preferred_color=shirt_color,
+            retail_price=blueprint.get("retail_price", 2999),
         )
         pid = sp["id"]
         print(f"[factory] Shopify Printify product created: {pid}")
