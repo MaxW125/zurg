@@ -4,6 +4,73 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-23 — Nightly Report Architecture (DONE)
+
+### What We Built
+Complete overhaul of the report + briefing system. Every room now generates a nightly snapshot at midnight, War Room synthesizes at 12:30am, and the 8am briefing reads the War Room report directly (no LLM call).
+
+### Why
+The War Room and CEO briefing were silencing at 7am/8am because the autonomous pipeline had already consumed the $5 daily cap before the cron jobs ran. New timing (midnight crons run before any production activity) and removing the 8am LLM call fixes this permanently.
+
+### Architecture
+- **0:00am midnight job** — all 14 rooms concurrently via `ThreadPoolExecutor`:
+  - **Passive rooms** (read existing data, no API calls): research, design, approval, factory, armory, memory, treasury, media_bay — each has a new `*_midnight_report()` function
+  - **Active rooms** (make live API calls): analytics, pricing, shop_health, cs, monitoring, radar_bay — reuse their existing `/run` endpoints
+- **0:30am war_room job** — reads all 14 latest_report.json files, runs one Haiku synthesis for fix/launch/watch, computes rule-based `room_highlights` dict (one line per room, no LLM), saves to war_room/reports/latest_report.json
+- **8:00am briefing job** — reads war_room report, formats as WhatsApp message, sends via notify.py — ZERO LLM calls
+
+### New Crontab (3 entries replaces 6)
+```
+0 0 * * *   cron_runner.py --job midnight
+30 0 * * *  cron_runner.py --job war_room
+0 8 * * *   cron_runner.py --job briefing
+```
+
+### New Files/Functions
+- `agents/researcher_room_mvp.py` — `researcher_midnight_report()`
+- `agents/designer_room_mvp.py` — `DESIGN_LOG_PATH`, `_log_design()`, `designer_midnight_report()`
+- `agents/approval_room_mvp.py` — `approval_midnight_report()`
+- `agents/factory_room_mvp.py` — `FACTORY_LOG_PATH`, `_log_publish()`, `factory_midnight_report()`
+- `agents/armory_mvp.py` — `armory_midnight_report()`
+- `agents/memory_room_mvp.py` — `memory_midnight_report()`
+- `agents/treasury_mvp.py` — `treasury_midnight_report()`
+- `agents/media_bay_mvp.py` — `media_bay_midnight_report()`
+- `agents/war_room_mvp.py` — full rewrite: 14 `_hl_*()` highlighters, `_build_room_highlights()`, `room_highlights` in report, reads all 14 rooms
+- `cron_runner.py` — full rewrite: only 3 jobs (midnight, war_room, briefing), ThreadPoolExecutor for concurrent midnight calls
+- `routers/rooms.py` — `/research/midnight-report`, `/design/midnight-report`, `/approval/midnight-report`, `/factory/midnight-report`
+- `routers/armory.py` — `/midnight-report`
+- `routers/memory.py` — `/midnight-report`
+- `routers/treasury.py` — `/midnight-report`
+- `routers/media_bay.py` — `/midnight-report`
+
+### Design/Factory Logging
+`run_designer()` now calls `_log_design()` after saving the image — logs niche, product_type, slug to `rooms/design/design_log.jsonl`. `run_factory()` calls `_log_publish()` at end (not in training mode) — logs title, product_type, shopify_url, etsy_url to `rooms/factory/publish_log.jsonl`. These logs are the source-of-truth for nightly snapshots.
+
+### War Room Report Shape
+```json
+{
+  "run_date": "...", "model_used": "haiku",
+  "summary": "...",
+  "fix": [...], "launch": [...], "watch": [...],
+  "room_highlights": {
+    "research": "5 niches researched: ...",
+    "design": "No designs generated today.",
+    ...all 14 rooms...
+  },
+  "rooms_included": [...]
+}
+```
+
+### Verified Working
+All 8 passive midnight endpoints tested and returning correct JSON. War room ran against real data: all 14 room_highlights populated, fix/launch/watch synthesis correct. Briefing job formatted and sent message to cron.log. Server clean restart.
+
+### What's Next
+- Nothing blocking. System runs autonomously and will start generating real design/approval/factory log data from the next production cycle.
+- To deep-dive any room from WhatsApp: ask Zurg about a specific room — CEO can read the room's latest_report.json on demand.
+- Consider adding `run_date` field checks in war_room highlighters if stale data (from previous days) should be flagged.
+
+---
+
 ## Session: 2026-05-23 — First Full Auto Day Bug Fixes (DONE)
 
 ### What We Fixed
