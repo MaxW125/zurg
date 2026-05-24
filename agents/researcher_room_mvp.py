@@ -314,3 +314,52 @@ def loop_status() -> dict:
         "last_run":          config.get("last_run"),
         "next_run_seconds":  next_run_seconds,
     }
+
+
+def researcher_midnight_report() -> dict:
+    """Scan today's brief files and save a midnight report."""
+    from datetime import timezone, timedelta
+    cst = timezone(timedelta(hours=-6))
+    today_start = datetime.now(cst).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    today_str = datetime.now(cst).strftime("%Y-%m-%d")
+
+    config = load_config()
+    briefs_dir = os.path.join(BRAIN_PATH, "rooms", "research", "briefs")
+    report_dir = os.path.join(BRAIN_PATH, "rooms", "research", "reports")
+
+    today_briefs = []
+    if os.path.isdir(briefs_dir):
+        for fname in sorted(os.listdir(briefs_dir)):
+            if not fname.endswith(".md"):
+                continue
+            fpath = os.path.join(briefs_dir, fname)
+            if os.path.getmtime(fpath) < today_start:
+                continue
+            niche, product_type = "", ""
+            try:
+                lines = open(fpath).read().splitlines()
+                for i, line in enumerate(lines):
+                    if line.strip() == "## Niche" and i + 1 < len(lines):
+                        niche = lines[i + 1].strip()
+                    elif line.strip() == "## Product Type" and i + 1 < len(lines):
+                        product_type = lines[i + 1].strip()
+            except Exception:
+                pass
+            today_briefs.append({"niche": niche or fname, "product_type": product_type})
+
+    nothing = not today_briefs
+    data = {
+        "run_date":         today_str,
+        "nothing_to_report": nothing,
+        "reason":           ("autonomous mode off" if not config.get("autonomous") else "0 cycles ran today") if nothing else None,
+        "autonomous":       config.get("autonomous", False),
+        "cycles_run":       len(today_briefs),
+        "max_per_day":      config.get("max_per_day", 5),
+        "briefs":           today_briefs,
+    }
+
+    os.makedirs(report_dir, exist_ok=True)
+    with open(os.path.join(report_dir, "latest_report.json"), "w") as f:
+        json.dump(data, f, indent=2)
+
+    return data

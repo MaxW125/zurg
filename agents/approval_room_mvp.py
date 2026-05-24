@@ -1,5 +1,7 @@
 import os
 import glob
+import json
+from datetime import datetime, timezone, timedelta
 from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
 
@@ -175,3 +177,56 @@ async def auto_decide(design: dict) -> dict:
         "verdict_count": verdict_count,
         "model_used": "claude",
     }
+
+
+def approval_midnight_report() -> dict:
+    cst = timezone(timedelta(hours=-6))
+    today_start = datetime.now(cst).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    today_str = datetime.now(cst).strftime("%Y-%m-%d")
+
+    verdicts_dir = os.path.join(BRAIN_PATH, "rooms", "approval", "verdicts")
+    report_dir = os.path.join(BRAIN_PATH, "rooms", "approval", "reports")
+
+    approved_today = 0
+    rejected_today = 0
+    verdicts_today = []
+
+    if os.path.isdir(verdicts_dir):
+        for fname in sorted(os.listdir(verdicts_dir)):
+            if not fname.endswith(".md"):
+                continue
+            fpath = os.path.join(verdicts_dir, fname)
+            if os.path.getmtime(fpath) < today_start:
+                continue
+            verdict_type = "approved" if "_approved_" in fname else "rejected"
+            niche, product_type = "", ""
+            try:
+                lines = open(fpath).read().splitlines()
+                for line in lines:
+                    if line.startswith("Niche:"):
+                        niche = line.replace("Niche:", "").strip()
+                    elif line.startswith("Product:"):
+                        product_type = line.replace("Product:", "").strip()
+            except Exception:
+                pass
+            if verdict_type == "approved":
+                approved_today += 1
+            else:
+                rejected_today += 1
+            verdicts_today.append({"verdict": verdict_type, "niche": niche, "product_type": product_type})
+
+    nothing = not verdicts_today
+    data = {
+        "run_date":          today_str,
+        "nothing_to_report": nothing,
+        "approved_today":    approved_today,
+        "rejected_today":    rejected_today,
+        "total_today":       approved_today + rejected_today,
+        "verdicts":          verdicts_today,
+    }
+
+    os.makedirs(report_dir, exist_ok=True)
+    with open(os.path.join(report_dir, "latest_report.json"), "w") as f:
+        json.dump(data, f, indent=2)
+
+    return data

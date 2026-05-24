@@ -177,6 +177,49 @@ def get_report() -> dict:
     }
 
 
+def treasury_midnight_report() -> dict:
+    today = _cst_today()
+    cfg = get_config()
+    cap = cfg["daily_cap_usd"]
+
+    all_entries = _read_all_entries()
+    today_entries = [e for e in all_entries if e.get("ts", "").startswith(today)]
+
+    spend_today = round(sum(float(e.get("cost_usd", 0)) for e in today_entries), 4)
+    cap_pct = round(spend_today / cap * 100, 1) if cap > 0 else 0.0
+
+    by_room: dict[str, float] = {}
+    images_today = 0
+    for e in today_entries:
+        room = e.get("room", "unknown")
+        by_room[room] = round(by_room.get(room, 0.0) + float(e.get("cost_usd", 0)), 4)
+        if e.get("model", "").startswith("imagen"):
+            images_today += 1
+
+    top_rooms = sorted(
+        [{"room": k, "cost_usd": v} for k, v in by_room.items()],
+        key=lambda x: -x["cost_usd"],
+    )[:5]
+
+    report_dir = os.path.join(BRAIN_PATH, "rooms", "treasury", "reports")
+    data = {
+        "run_date":             today,
+        "spend_today":          spend_today,
+        "daily_cap_usd":        cap,
+        "cap_pct":              cap_pct,
+        "cap_hit":              spend_today >= cap and cap > 0,
+        "total_entries_today":  len(today_entries),
+        "images_generated_today": images_today,
+        "top_rooms_today":      top_rooms,
+    }
+
+    os.makedirs(report_dir, exist_ok=True)
+    with open(os.path.join(report_dir, "latest_report.json"), "w") as f:
+        json.dump(data, f, indent=2)
+
+    return data
+
+
 def _get_analytics_revenue() -> float | None:
     path = os.path.join(BRAIN_PATH, "rooms", "analytics", "reports", "latest_report.json")
     try:

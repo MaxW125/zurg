@@ -1,7 +1,7 @@
 import os
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
 
@@ -169,6 +169,39 @@ Write the complete SKILL.md content. Output only the file content — nothing el
         "content": content,
         "model_used": model_used,
     }
+
+
+def armory_midnight_report() -> dict:
+    cst = timezone(timedelta(hours=-6))
+    today_start = datetime.now(cst).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    today_str = datetime.now(cst).strftime("%Y-%m-%d")
+
+    all_skills = get_skills_list()
+    total_skills = len(all_skills)
+
+    skills_today = []
+    for skill in all_skills:
+        fpath = os.path.join(SKILLS_DIR, skill["filename"])
+        try:
+            if os.path.getmtime(fpath) >= today_start:
+                skills_today.append({"name": skill["name"], "description": skill["description"]})
+        except Exception:
+            pass
+
+    nothing = len(skills_today) == 0
+    data = {
+        "run_date":     today_str,
+        "nothing_to_report": nothing,
+        "total_skills": total_skills,
+        "new_today":    len(skills_today),
+        "skills_today": skills_today,
+    }
+
+    os.makedirs(ARMORY_DIR, exist_ok=True)
+    with open(os.path.join(ARMORY_DIR, "latest_report.json"), "w") as f:
+        json.dump(data, f, indent=2)
+
+    return data
 
 
 async def save_skill(content: str, slug: str, version: int) -> dict:

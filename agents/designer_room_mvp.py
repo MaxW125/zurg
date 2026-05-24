@@ -12,6 +12,21 @@ from agents.treasury_mvp import append_fixed_cost_entry
 from agents.notify import notify
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 IMAGEN_MODEL = "imagen-4.0-generate-001"
+DESIGN_LOG_PATH = os.path.join(BRAIN_PATH, "rooms", "design", "design_log.jsonl")
+
+
+def _log_design(niche: str, product_type: str, slug: str) -> None:
+    from datetime import timezone, timedelta
+    cst = timezone(timedelta(hours=-6))
+    entry = {
+        "ts":           datetime.now(cst).strftime("%Y-%m-%dT%H:%M:%S"),
+        "niche":        niche,
+        "product_type": product_type,
+        "slug":         slug,
+    }
+    os.makedirs(os.path.dirname(DESIGN_LOG_PATH), exist_ok=True)
+    with open(DESIGN_LOG_PATH, "a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 _PROMPT_FALLBACK = """You are a print-on-demand product designer. Given a niche research brief, you write a detailed image generation prompt for apparel and product designs.
 
@@ -243,6 +258,7 @@ async def run_designer(input: dict) -> dict:
     # Step 4 — save image
     slug = input.get("niche", "design").lower().replace(" ", "_")[:30]
     image_path = _save_image(image_bytes, slug)
+    _log_design(input.get("niche", ""), input.get("product_type", ""), slug)
 
     # Step 5 — generate Etsy copy (title, description, 13 tags)
     copy = await _generate_copy(
@@ -265,3 +281,51 @@ async def run_designer(input: dict) -> dict:
         "tags":         copy["tags"],
         "model_used":   "claude",
     }
+
+
+def designer_midnight_report() -> dict:
+    from datetime import timezone, timedelta
+    cst = timezone(timedelta(hours=-6))
+    today_start = datetime.now(cst).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    today_str = datetime.now(cst).strftime("%Y-%m-%d")
+
+    report_dir = os.path.join(BRAIN_PATH, "rooms", "design", "reports")
+    designs_today = []
+
+    if os.path.isfile(DESIGN_LOG_PATH):
+        try:
+            with open(DESIGN_LOG_PATH) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        ts_str = entry.get("ts", "")
+                        if ts_str:
+                            ts = datetime.fromisoformat(ts_str)
+                            ts = ts.replace(tzinfo=cst)
+                            if ts.timestamp() >= today_start:
+                                designs_today.append({
+                                    "niche":        entry.get("niche", ""),
+                                    "product_type": entry.get("product_type", ""),
+                                    "slug":         entry.get("slug", ""),
+                                })
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    nothing = not designs_today
+    data = {
+        "run_date":          today_str,
+        "nothing_to_report": nothing,
+        "designs_generated": len(designs_today),
+        "designs":           designs_today,
+    }
+
+    os.makedirs(report_dir, exist_ok=True)
+    with open(os.path.join(report_dir, "latest_report.json"), "w") as f:
+        json.dump(data, f, indent=2)
+
+    return data

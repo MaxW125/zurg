@@ -11,6 +11,34 @@ INDEX_LOG_PATH = os.path.join(BRAIN_PATH, "rooms", "memory", "index_log.json")
 SKILLS_DIR = os.path.expanduser("~/.openclaw/skills")
 
 
+def memory_midnight_report() -> dict:
+    from datetime import timezone, timedelta
+    cst = timezone(timedelta(hours=-6))
+    today_str = datetime.now(cst).strftime("%Y-%m-%d")
+
+    stats = get_vault_stats()
+    report_dir = os.path.join(BRAIN_PATH, "rooms", "memory", "reports")
+
+    largest_room = stats["room_sizes"][0]["room"] if stats.get("room_sizes") else None
+
+    data = {
+        "run_date":       today_str,
+        "briefs_count":   stats["briefs_count"],
+        "verdicts_count": stats["verdicts_count"],
+        "reports_count":  stats["reports_count"],
+        "skills_count":   stats["skills_count"],
+        "total_md_files": stats["total_md_files"],
+        "total_kb":       stats["total_kb"],
+        "largest_room":   largest_room,
+    }
+
+    os.makedirs(report_dir, exist_ok=True)
+    with open(os.path.join(report_dir, "latest_report.json"), "w") as f:
+        json.dump(data, f, indent=2)
+
+    return data
+
+
 def get_vault_stats() -> dict:
     rooms_dir = Path(BRAIN_PATH) / "rooms"
     total_bytes = 0

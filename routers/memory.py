@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from agents.memory_room_mvp import get_vault_stats, compress_vault, export_cold_storage, run_index
+from agents.memory_room_mvp import get_vault_stats, compress_vault, export_cold_storage, run_index, memory_midnight_report
 
 router = APIRouter(prefix="/api/memory")
 
@@ -27,3 +27,8 @@ async def memory_export():
 @router.post("/index")
 async def memory_index():
     return run_index()
+
+
+@router.post("/midnight-report")
+async def memory_midnight():
+    return memory_midnight_report()

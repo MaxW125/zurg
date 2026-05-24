@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from agents.armory_mvp import generate_skill, save_skill, get_skills_list
+from agents.armory_mvp import generate_skill, save_skill, get_skills_list, armory_midnight_report
 
 router = APIRouter(prefix="/api/armory")
 
@@ -28,3 +28,8 @@ async def armory_save(req: SaveRequest):
 @router.get("/skills")
 async def armory_skills():
     return {"skills": get_skills_list()}
+
+
+@router.post("/midnight-report")
+async def armory_midnight():
+    return armory_midnight_report()

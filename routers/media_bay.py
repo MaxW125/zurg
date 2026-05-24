@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
-from agents.media_bay_mvp import run_media_bay, get_latest_report
+from agents.media_bay_mvp import run_media_bay, get_latest_report, media_bay_midnight_report
 
 router = APIRouter(prefix="/api/media-bay")
 
@@ -28,3 +28,8 @@ async def run_media_bay_endpoint(body: MediaBayInput):
 async def media_bay_status():
     report = await get_latest_report()
     return {"report": report}
+
+
+@router.post("/midnight-report")
+async def media_bay_midnight():
+    return media_bay_midnight_report()

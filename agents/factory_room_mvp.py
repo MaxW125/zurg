@@ -1,10 +1,29 @@
 import os
+import json
 import asyncio
+from datetime import datetime, timezone, timedelta
 from agents.printify_client import upload_image, create_product, download_mockup, publish_product, get_product
 from agents.product_catalog import get_blueprint
 from agents.notify import notify
 from agents.treasury_mvp import append_fixed_cost_entry
 import agents.etsy_client as etsy_client
+
+BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
+FACTORY_LOG_PATH = os.path.join(BRAIN_PATH, "rooms", "factory", "publish_log.jsonl")
+_CST = timezone(timedelta(hours=-6))
+
+
+def _log_publish(title: str, product_type: str, shopify_url: str, etsy_url: str) -> None:
+    entry = {
+        "ts":           datetime.now(_CST).strftime("%Y-%m-%dT%H:%M:%S"),
+        "title":        title,
+        "product_type": product_type,
+        "shopify_url":  shopify_url or "",
+        "etsy_url":     etsy_url or "",
+    }
+    os.makedirs(os.path.dirname(FACTORY_LOG_PATH), exist_ok=True)
+    with open(FACTORY_LOG_PATH, "a") as f:
+        f.write(json.dumps(entry) + "\n")
 
 
 
@@ -212,6 +231,8 @@ async def run_factory(input: dict) -> dict:
     if etsy_product_url:
         await notify(f"✅ Etsy live: {title}\n{etsy_product_url}")
 
+    _log_publish(title, product_type, shopify_result["product_url"], etsy_product_url or "")
+
     return {
         "product_id":               shopify_result["product_id"],
         "product_url":              shopify_result["product_url"],
@@ -224,3 +245,51 @@ async def run_factory(input: dict) -> dict:
         "etsy_product_url":         etsy_product_url,
         "etsy_printify_product_id": etsy_printify_id,
     }
+
+
+def factory_midnight_report() -> dict:
+    today_str = datetime.now(_CST).strftime("%Y-%m-%d")
+    today_start = datetime.now(_CST).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+    report_dir = os.path.join(BRAIN_PATH, "rooms", "factory", "reports")
+    publishes_today = []
+
+    if os.path.isfile(FACTORY_LOG_PATH):
+        try:
+            with open(FACTORY_LOG_PATH) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        ts_str = entry.get("ts", "")
+                        if ts_str and ts_str.startswith(today_str):
+                            publishes_today.append({
+                                "title":        entry.get("title", ""),
+                                "product_type": entry.get("product_type", ""),
+                                "has_etsy":     bool(entry.get("etsy_url")),
+                            })
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    shopify_count = len(publishes_today)
+    etsy_count = sum(1 for p in publishes_today if p["has_etsy"])
+    nothing = shopify_count == 0
+
+    data = {
+        "run_date":          today_str,
+        "nothing_to_report": nothing,
+        "products_published": shopify_count,
+        "shopify_count":     shopify_count,
+        "etsy_count":        etsy_count,
+        "publishes":         publishes_today,
+    }
+
+    os.makedirs(report_dir, exist_ok=True)
+    with open(os.path.join(report_dir, "latest_report.json"), "w") as f:
+        json.dump(data, f, indent=2)
+
+    return data

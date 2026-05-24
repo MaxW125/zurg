@@ -2,9 +2,10 @@ import json
 import os
 from fastapi import APIRouter
 from pydantic import BaseModel
-from agents.researcher_room_mvp import run_researcher, start_loop, stop_loop, loop_status
-from agents.designer_room_mvp import run_designer
-from agents.factory_room_mvp import run_factory
+from agents.researcher_room_mvp import run_researcher, start_loop, stop_loop, loop_status, researcher_midnight_report
+from agents.designer_room_mvp import run_designer, designer_midnight_report
+from agents.factory_room_mvp import run_factory, factory_midnight_report
+from agents.approval_room_mvp import approval_midnight_report
 from agents.notify import notify
 
 router = APIRouter(prefix="/api/rooms")
@@ -140,3 +141,23 @@ async def run_design_room(body: DesignInput):
 async def run_factory_room(body: FactoryInput):
     """Trigger the Factory agent directly — only called after owner approval."""
     return await run_factory(body.model_dump())
+
+
+@router.post("/research/midnight-report")
+async def research_midnight():
+    return researcher_midnight_report()
+
+
+@router.post("/design/midnight-report")
+async def design_midnight():
+    return designer_midnight_report()
+
+
+@router.post("/approval/midnight-report")
+async def approval_midnight():
+    return approval_midnight_report()
+
+
+@router.post("/factory/midnight-report")
+async def factory_midnight():
+    return factory_midnight_report()

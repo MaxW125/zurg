@@ -222,6 +222,47 @@ def _save_report(data: dict) -> str:
     return md_path
 
 
+def media_bay_midnight_report() -> dict:
+    from datetime import timezone, timedelta
+    cst = timezone(timedelta(hours=-6))
+    today_start = datetime.now(cst).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    today_str = datetime.now(cst).strftime("%Y-%m-%d")
+
+    content_count = 0
+    products_covered = []
+
+    if os.path.isdir(MEDIA_BAY_DIR):
+        for fname in sorted(os.listdir(MEDIA_BAY_DIR)):
+            if not fname.startswith("content_") or not fname.endswith(".md"):
+                continue
+            fpath = os.path.join(MEDIA_BAY_DIR, fname)
+            if os.path.getmtime(fpath) < today_start:
+                continue
+            content_count += 1
+            try:
+                with open(fpath) as mf:
+                    for line in mf:
+                        if line.startswith("**Product:**"):
+                            products_covered.append(line.replace("**Product:**", "").strip())
+                            break
+            except Exception:
+                pass
+
+    nothing = content_count == 0
+    data = {
+        "run_date":                today_str,
+        "nothing_to_report":       nothing,
+        "content_generated_today": content_count,
+        "products_covered":        products_covered,
+    }
+
+    os.makedirs(MEDIA_BAY_DIR, exist_ok=True)
+    with open(os.path.join(MEDIA_BAY_DIR, "latest_report.json"), "w") as f:
+        json.dump(data, f, indent=2)
+
+    return data
+
+
 async def get_latest_report() -> dict | None:
     path = os.path.join(MEDIA_BAY_DIR, "latest_report.json")
     if not os.path.exists(path):
