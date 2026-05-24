@@ -323,6 +323,19 @@ async def fetch_listings(state: str = "active", limit: int = 100) -> list[dict]:
     return results
 
 
+async def update_listing_price(listing_id: int, price_usd: float) -> dict:
+    """Update the price of an existing active Etsy listing."""
+    token = await _get_token()
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.patch(
+            f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}",
+            headers=_headers(token),
+            json={"price": round(price_usd, 2)},
+        )
+        r.raise_for_status()
+        return r.json()
+
+
 async def fetch_receipts(limit: int = 250) -> list[dict]:
     """Return shop receipts (orders). Paid receipts have was_paid=True."""
     token = await _get_token()

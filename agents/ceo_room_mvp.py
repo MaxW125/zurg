@@ -27,7 +27,8 @@ Intent rules — pick the FIRST one that matches:
 - "publish"        → message mentions: publish, shopify, list, post, upload, go live, put it on the store
 - "pipeline"       → message mentions: full pipeline, start from scratch, do everything, run it all
 - "set_reporting"  → message mentions: weekly report, daily report, switch to weekly, go weekly, switch to daily, daily briefing, weekly briefing, report frequency, weekly updates, daily updates
-- "chat"           → anything else (greetings, questions, status, yes/no, unclear)
+- "store_query"    → message asks about live store data: how many products, how many listings, how many orders, revenue, sales, earnings, what's selling, best seller, how much have we made, how's the store doing, product count, order count, Etsy stats, Shopify stats, store performance, inventory count, how much money
+- "chat"           → anything else (greetings, questions, status, yes/no, strategy, unclear)
 
 Examples:
 "find me a niche about dogs" → {"intent": "research"}
@@ -39,10 +40,36 @@ Examples:
 "run the full pipeline" → {"intent": "pipeline"}
 "switch to weekly reports" → {"intent": "set_reporting"}
 "go back to daily" → {"intent": "set_reporting"}
+"how many products do we have on Etsy?" → {"intent": "store_query"}
+"what was our revenue this week?" → {"intent": "store_query"}
+"how many listings do we have?" → {"intent": "store_query"}
+"what's our best seller?" → {"intent": "store_query"}
+"how many orders have we had?" → {"intent": "store_query"}
+"how's the store doing?" → {"intent": "store_query"}
+"how much money have we made?" → {"intent": "store_query"}
 "how are you" → {"intent": "chat"}
 "yes" → {"intent": "chat"}
 
 Output ONLY raw JSON. No explanation."""
+
+
+_STORE_QUERY_KEYWORDS = [
+    "how many products", "how many listings", "how many orders", "how many sales",
+    "revenue", "how much money", "how much have we", "how much have i",
+    "best seller", "best-seller", "top seller", "top product",
+    "what's selling", "what is selling", "what sells",
+    "how's the store", "how is the store", "store doing",
+    "store stats", "store data", "store performance",
+    "total sales", "total revenue", "total orders", "total products", "total listings",
+    "earnings", "product count", "order count", "listing count",
+    "etsy stats", "shopify stats", "etsy orders", "shopify orders",
+    "etsy revenue", "shopify revenue", "etsy listings", "shopify products",
+]
+
+
+def _is_store_query(message: str) -> bool:
+    msg = message.lower()
+    return any(kw in msg for kw in _STORE_QUERY_KEYWORDS)
 
 
 def _load_identity() -> str:
@@ -51,7 +78,9 @@ def _load_identity() -> str:
 
 
 async def _classify_intent(message: str) -> str:
-    """Classify the owner's intent via Haiku."""
+    """Classify the owner's intent. Python keyword pre-check first, then LLM."""
+    if _is_store_query(message):
+        return "store_query"
     try:
         raw = await call_claude_haiku(message, system=INTENT_SYSTEM, room="ceo")
         data = json.loads(raw)
@@ -171,6 +200,17 @@ Write 1 sentence confirming the Factory agent got the product live and share the
             json.dump({"mode": mode}, f)
         confirm_prompt = f'You just switched the owner\'s briefing mode to "{mode}" reports. Write 1 sentence confirming this change in your own voice.'
         response = await call_claude_haiku(confirm_prompt, system=identity, room="ceo")
+
+    elif intent == "store_query":
+        from agents.store_intel import fetch_store_snapshot, format_snapshot_for_prompt
+        snapshot = await fetch_store_snapshot()
+        data_block = format_snapshot_for_prompt(snapshot)
+        store_prompt = f"""{data_block}
+
+Owner asked: "{message}"
+
+Answer their question directly using the live data above. Be specific with numbers. You are the CEO who just pulled the live numbers — speak naturally (e.g. "I've just checked our live numbers — here's what I'm seeing..."). 3-4 sentences max. If any platform shows an error, mention it briefly."""
+        response = await call_claude_haiku(store_prompt, system=identity, room="ceo")
 
     else:
         response = await call_claude_haiku(message, system=identity, room="ceo")

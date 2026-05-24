@@ -62,7 +62,7 @@
 - [x] **Background removal settled** — Magenta prompt + flood-fill from edges (tol=60) + global pass (tol=30) vs detected corner color. rembg removed.
 - [x] **Upgraded to Imagen 4 full** — `imagen-4.0-generate-001`, $0.04/image in Treasury.
 - [x] **8am cron briefing error alerting** — CEO cron now sends WhatsApp warning if briefing endpoint errors or returns empty.
-- [ ] Etsy order/revenue data — requires OAuth 2.0 flow. Build when store has real orders.
+- [x] Etsy order/revenue data — Analytics reads Etsy receipts + revenue. CS scans unshipped Etsy receipts. Pricing reads Etsy listings + receipts for analysis. OAuth flow was already built in `etsy_client.py`.
 - [ ] Ideogram + Flux image fallbacks — Imagen fallback if Google API goes down
 - [ ] Gelato fulfilment fallback — Printify backup
 - [ ] Reviews integration — Judge.me or Yotpo

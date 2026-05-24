@@ -6,24 +6,14 @@ from datetime import datetime, timezone, timedelta
 _CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude_haiku
 from agents.brain import load_system_prompt
+import agents.etsy_client as etsy_client
 import httpx
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 SHOP_HEALTH_DIR = os.path.join(BRAIN_PATH, "rooms", "shop_health", "reports")
 SHOPIFY_API_VERSION = "2025-01"
 
-ETSY_BASE      = "https://openapi.etsy.com/v3"
-ETSY_SHOP_ID   = os.getenv("ETSY_SHOP_ID", "")
-ETSY_API_KEY   = os.getenv("ETSY_API_KEY", "")
-ETSY_SECRET    = os.getenv("ETSY_SHARED_SECRET", "")
-
-
-def _etsy_headers() -> dict | None:
-    if not ETSY_API_KEY or not ETSY_SECRET:
-        return None
-    return {"x-api-key": f"{ETSY_API_KEY}:{ETSY_SECRET}"}
-
-_SHOP_HEALTH_FALLBACK = """You are the Shop Health Agent for a print-on-demand Shopify store.
+_SHOP_HEALTH_FALLBACK = """You are the Shop Health Agent for a print-on-demand Shopify and Etsy store.
 Your job is to audit active product listings for SEO weaknesses and staleness, then give precise, actionable fixes.
 Rules:
 - Be specific: if a title is too short, suggest a better one. If tags are missing, suggest exact tags to add.
@@ -67,18 +57,10 @@ async def _fetch_orders() -> list:
 
 
 async def _fetch_etsy_listings() -> list:
-    headers = _etsy_headers()
-    if not headers or not ETSY_SHOP_ID:
+    if not etsy_client.is_configured():
         return []
     try:
-        async with httpx.AsyncClient(timeout=20) as client:
-            r = await client.get(
-                f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/active",
-                headers=headers,
-                params={"limit": 100, "includes": ""},
-            )
-            r.raise_for_status()
-            return r.json().get("results", [])
+        return await etsy_client.fetch_listings(state="active", limit=100)
     except Exception as e:
         print(f"[shop_health] Etsy listings fetch failed: {e}")
         return []

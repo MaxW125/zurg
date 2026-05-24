@@ -232,7 +232,7 @@ async def _autonomous_loop() -> None:
 
             # Trigger designer if auto mode is enabled (best-effort — if it fails, loop continues)
             try:
-                async with httpx.AsyncClient(timeout=300) as client:
+                async with httpx.AsyncClient(timeout=600) as client:
                     r = await client.post(
                         "http://localhost:9000/api/rooms/design/run",
                         json=brief,
@@ -241,6 +241,7 @@ async def _autonomous_loop() -> None:
                         print(f"[researcher] Design triggered for: {brief['niche']}")
                     else:
                         print(f"[researcher] Design trigger failed: {r.status_code}")
+                        await notify(f"⚠️ Designer failed to start for: {brief.get('niche', '?')}\nStatus {r.status_code}")
             except Exception as e:
                 print(f"[researcher] Could not trigger designer: {e}")
                 await notify(f"⚠️ Designer failed to start for: {brief.get('niche', '?')}\n{str(e)[:120]}")

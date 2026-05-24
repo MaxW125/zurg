@@ -1,17 +1,19 @@
 import os
 import json
+import asyncio
 from datetime import datetime, timezone, timedelta
 
 _CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude_haiku
 from agents.brain import load_system_prompt
+import agents.etsy_client as etsy_client
 import httpx
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 CS_DIR = os.path.join(BRAIN_PATH, "rooms", "cs", "reports")
 SHOPIFY_API_VERSION = "2025-01"
 
-_CS_FALLBACK = """You are the Customer Service Agent for a print-on-demand Shopify store.
+_CS_FALLBACK = """You are the Customer Service Agent for a print-on-demand store selling on Shopify and Etsy.
 Your job is to draft professional, warm, and concise customer messages.
 Rules:
 - Always address the customer by first name.
@@ -120,6 +122,62 @@ def _categorise_orders(orders: list) -> tuple[list, list]:
     return attention, review_queue
 
 
+async def _fetch_etsy_receipts() -> list:
+    if not etsy_client.is_configured():
+        return []
+    try:
+        return await etsy_client.fetch_receipts(limit=250)
+    except Exception as e:
+        print(f"[cs] Etsy receipts fetch failed: {e}")
+        return []
+
+
+def _categorise_etsy_receipts(receipts: list) -> list:
+    """Flag paid Etsy orders that haven't shipped after 3+ days."""
+    now = datetime.now(timezone.utc)
+    attention = []
+
+    for receipt in receipts:
+        if not receipt.get("was_paid"):
+            continue
+        if receipt.get("was_shipped"):
+            continue
+
+        create_ts = receipt.get("create_timestamp") or receipt.get("created_timestamp") or 0
+        if not create_ts:
+            continue
+
+        created_dt = datetime.fromtimestamp(create_ts, tz=timezone.utc)
+        age_days = (now - created_dt).days
+        if age_days < 3:
+            continue
+
+        # Buyer name from shipping address (first word only)
+        raw_name = receipt.get("name", "").strip()
+        first_name = raw_name.split()[0] if raw_name else "there"
+
+        products = [tx.get("title", "your item") for tx in receipt.get("transactions", [])]
+        receipt_id = receipt.get("receipt_id", "")
+        grandtotal = receipt.get("grandtotal", {})
+        total = str(round(grandtotal.get("amount", 0) / (grandtotal.get("divisor") or 100), 2))
+
+        attention.append({
+            "source":         "etsy",
+            "order_id":       receipt_id,
+            "order_number":   f"Etsy #{receipt_id}",
+            "customer_name":  first_name,
+            "customer_email": receipt.get("buyer_email", ""),
+            "product_names":  products,
+            "order_date":     created_dt.strftime("%Y-%m-%d"),
+            "total":          total,
+            "issue":          "unfulfilled",
+            "issue_label":    f"ETSY UNSHIPPED {age_days}D",
+            "drafted_reply":  "",
+        })
+
+    return attention
+
+
 async def _draft_messages(attention: list, review_queue: list, system: str) -> tuple[list, list, str]:
     if not attention and not review_queue:
         return attention, review_queue, "none"
@@ -215,7 +273,7 @@ def _save_report(data: dict) -> str:
 {review_md}
 
 ---
-Orders scanned: {data.get('orders_scanned', 0)}
+Shopify orders scanned: {data.get('orders_scanned', 0)} | Etsy receipts scanned: {data.get('etsy_scanned', 0)}
 Model: {data.get('model_used', '—')}
 """
     with open(md_path, "w") as f:
@@ -236,6 +294,9 @@ async def get_latest_report() -> dict | None:
 
 
 async def run_cs() -> dict:
+    # Fetch Shopify orders and Etsy receipts in parallel
+    etsy_task = asyncio.create_task(_fetch_etsy_receipts())
+
     try:
         orders = await _fetch_orders()
     except httpx.HTTPStatusError as e:
@@ -245,17 +306,23 @@ async def run_cs() -> dict:
     except Exception as e:
         return {"error": f"Shopify orders fetch failed: {e}", "shopify_error": True}
 
+    etsy_receipts = await etsy_task
+
     attention, review_queue = _categorise_orders(orders)
+    etsy_attention = _categorise_etsy_receipts(etsy_receipts)
+    attention = attention + etsy_attention
+    attention.sort(key=lambda x: x["order_date"])
 
     system = load_system_prompt("cs", "cs", _CS_FALLBACK)
     attention, review_queue, model_used = await _draft_messages(attention, review_queue, system)
 
     data = {
-        "run_date": datetime.now(_CST).strftime("%Y-%m-%d"),
-        "orders_scanned": len(orders),
+        "run_date":        datetime.now(_CST).strftime("%Y-%m-%d"),
+        "orders_scanned":  len(orders),
+        "etsy_scanned":    len(etsy_receipts),
         "attention_orders": attention,
-        "review_queue": review_queue,
-        "model_used": model_used,
+        "review_queue":    review_queue,
+        "model_used":      model_used,
     }
 
     data["report_path"] = _save_report(data)

@@ -4,6 +4,124 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-24 — Zurg Real-Time Store Awareness (DONE)
+
+### What We Built
+Zurg (CEO) can now answer live store questions via WhatsApp or browser. When Max asks anything about product counts, orders, revenue, or listings, Zurg fetches real data and answers from it — no more "I don't have real-time access".
+
+### New File
+**`agents/store_intel.py`** — lightweight store data module:
+- `fetch_store_snapshot()` — async, pulls in parallel: Shopify (active product count + paid orders + revenue, last 30 days) and Etsy (active listing count + paid receipts + revenue, last 30 days). Designed to complete in <5s.
+- `format_snapshot_for_prompt()` — formats the snapshot as a `=== LIVE STORE DATA ===` block for injection into the CEO prompt
+- Reuses the same HTTP patterns as analytics/pricing. Handles errors per-platform — if one fails, the other still shows.
+
+### Changes to `agents/ceo_room_mvp.py`
+1. **`_is_store_query(message)`** — deterministic Python keyword pre-check (no LLM needed). Matches ~20 patterns: "how many products", "revenue", "how many listings", "best seller", "etsy stats", etc.
+2. **`_classify_intent()`** — now calls `_is_store_query()` first before the Haiku LLM call. If it matches, returns "store_query" immediately. This is faster and more reliable than asking LLM to classify it.
+3. **`store_query` intent handler** in `run_ceo()` — fetches live snapshot, injects data block into prompt, asks Haiku to answer the owner's question in CEO voice.
+4. **Updated INTENT_SYSTEM** — added `store_query` intent with description + 7 examples so LLM classification also works as a fallback.
+
+### How It Works (flow)
+```
+WhatsApp/browser → /api/chat/ceo/instruct → _classify_intent()
+  → _is_store_query() checks message keywords
+    → if match: store_query
+      → fetch_store_snapshot() [Shopify + Etsy in parallel, <5s]
+      → inject "=== LIVE STORE DATA ===" block into CEO prompt
+      → call_claude_haiku() responds as Zurg reading a briefing
+    → if no match: LLM classifies → existing intent handlers (research, design, etc.)
+```
+
+### Tested End-to-End
+- "how many products do we have on Etsy?" → **store_query** → "We've got 9 active listings on Etsy, 7 on Shopify..."
+- "what was our revenue this week?" → **store_query** → "zero revenue across the board this week..."
+- "how are you doing?" → **chat** (not triggered) ✅
+- "should we focus on hoodies or mugs?" → **chat** (strategy question, not triggered) ✅
+- "find me a dog niche" → **research** (not triggered) ✅
+
+### Design Decisions
+- **No new room** — this is CEO capability, wired directly into `ceo_room_mvp.py`
+- **Python keyword pre-check, not LLM** — Haiku was inconsistently classifying "how many products" as "chat" despite good examples. Keyword matching is deterministic, faster, and covers the exact phrasings Max uses.
+- **WhatsApp flow unchanged** — store_query runs synchronously (fast enough). Only "research" gets backgrounded in `routers/chat.py`.
+- **Snapshot window = 30 days** — covers "this week" and "this month" questions. Revenue is from paid orders/receipts only.
+
+### Current Accurate Numbers (live as of this session)
+- Shopify: 7 active products, 0 paid orders, $0 revenue (30 days)
+- Etsy: 9 active listings, 0 paid receipts, $0 revenue (30 days)
+
+### What's NOT Done
+- "what's our best seller?" → correctly triggers store_query, but with zero sales the answer is always "no sales yet". Will be useful once orders come in.
+- Etsy OAuth token can expire (403 on receipts seen in logs) — if expired, snapshot skips Etsy gracefully and Zurg mentions it.
+
+### Next Session
+- Check if Etsy OAuth tokens need refreshing (saw 403 in logs on receipts endpoint)
+- Consider adding pipeline metrics to the snapshot (briefs run, verdicts, approval rate) so Zurg can answer "how's the pipeline going?"
+- Consider asking Zurg "what's our best seller?" once first orders arrive to verify revenue calculation
+
+---
+
+## Session: 2026-05-24 — Bug Fixes + Full Etsy Parity Across All Agents
+
+### What We Did
+Bug-fix session. No new rooms built. All changes were fixes and enhancements to existing agents.
+
+### Changes Made
+
+**1. Pricing Room — Full Etsy Parity**
+- Added `_fetch_etsy_listings()`, `_fetch_etsy_receipts()`, `_build_etsy_product_stats()`, `apply_etsy_price_change()` to `agents/pricing_room_mvp.py`
+- `_run_analysis()` now includes both `[Shopify]` and `[Etsy]` labeled products in the LLM prompt
+- `run_pricing()` fetches Shopify orders + Etsy listings + Etsy receipts + market intel all in parallel
+- Report (`latest_report.json`) now includes `etsy_product_stats` and `etsy_listings_analysed`
+- Added `POST /api/pricing/apply-etsy` endpoint to `routers/pricing.py`
+- Updated fallback system prompt to list base costs for all 10 product types
+
+**2. Pricing Room UI — Removed "Active Products" section**
+- The product list table was removed from the panel (would grow to 100s of rows with 5 products/day)
+- Panel now shows: slim metadata bar (last run date, Shopify count, Etsy count, model) + Refresh button + Recommendations only
+- Removed unused `showApplyPrice()`, `hideApplyPrice()`, `applyPrice()` JS functions
+
+**3. CS Room — Added Etsy Receipt Scanning**
+- Added `import asyncio`, `import agents.etsy_client as etsy_client`
+- Added `_fetch_etsy_receipts()` wrapper (skips gracefully if Etsy not configured)
+- Added `_categorise_etsy_receipts()` — flags paid Etsy orders that haven't shipped after 3+ days (mirrors Shopify unfulfilled logic). Uses `was_paid=True` + `was_shipped=False` + `age_days >= 3`
+- `run_cs()` fetches Etsy receipts in parallel with Shopify orders, merges attention lists, sorts by date
+- Report now includes `etsy_scanned` count
+- System prompt updated to mention "Shopify and Etsy store"
+
+**4. Shop Health Room — Switched Etsy from Raw HTTP to `etsy_client`**
+- Removed manual `ETSY_BASE`, `ETSY_SHOP_ID`, `ETSY_API_KEY`, `ETSY_SECRET` constants and `_etsy_headers()` function
+- `_fetch_etsy_listings()` now calls `etsy_client.fetch_listings(state="active")` — gets proper OAuth Bearer token + auto-refresh instead of unauthenticated API key header
+
+**5. Designer False Alarm Fix**
+- Root cause: researcher triggers designer via `httpx.AsyncClient(timeout=300)` but the full chain (design → auto-decide → factory with Etsy mockup poll 180s + URL poll 150s + Shopify poll 90s) can take 7+ minutes, so the client timed out
+- The designer was running fine — the timeout just fired the false alarm notify
+- Fix: raised timeout from 300s → 600s; moved the `notify()` call inside the `r.status_code != 200` branch (only fires on actual server-side failure, not client timeout)
+- File: `agents/researcher_room_mvp.py`
+
+**6. Per-Product Catalog Pricing (previous session, documented here)**
+- All 10 product types now have `retail_price` in `agents/product_catalog.py` (in cents)
+- `printify_client.create_product()` takes `retail_price` param, both Shopify and Etsy Printify products now use catalog prices
+- Prices: T-Shirt $27.99, Hoodie $49.99, Long Sleeve $32.99, Crewneck $39.99, Mug $19.99, Tote $24.99, Tumbler $34.99, Sticker $9.99, Hat $39.99, Apron $42.99
+
+### Current State of Etsy Access Per Agent
+| Agent | Shopify | Etsy | Role |
+|---|---|---|---|
+| Factory | ✅ | ✅ | Publishes via Printify to both |
+| Analytics | ✅ | ✅ | Reads orders + revenue from both |
+| Pricing | ✅ | ✅ | Reads listings + sales, writes price updates to both |
+| Shop Health | ✅ | ✅ (OAuth) | Audits active listings on both |
+| CS | ✅ | ✅ | Flags unfulfilled Shopify + unshipped Etsy orders |
+| Monitoring | ✅ | ✅ | Checks API health for both |
+| Treasury | via analytics | via analytics | Revenue from analytics report |
+
+### What's NOT Done
+- Existing live listings on Shopify/Etsy are still priced at $29.99 (wrong for mugs, stickers, hats etc.) — Max is updating these manually
+
+### Next Session
+Give Zurg (CEO) real-time store data access so he can answer questions via WhatsApp like "how many products do we have on Etsy?" Currently he says he has no real-time access. See prompt in HANDOFF for details.
+
+---
+
 ## Session: 2026-05-23 — Nightly Report Architecture (DONE)
 
 ### What We Built

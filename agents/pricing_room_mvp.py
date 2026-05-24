@@ -7,23 +7,24 @@ from datetime import datetime, timezone, timedelta
 _CST = timezone(timedelta(hours=-6))
 from agents.llm_client import call_claude
 from agents.brain import load_system_prompt
+import agents.etsy_client as etsy_client
 import httpx
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 PRICING_DIR = os.path.join(BRAIN_PATH, "rooms", "pricing", "reports")
 SHOPIFY_API_VERSION = "2025-01"
 
-_PRICING_FALLBACK = """You are the Pricing Agent for a print-on-demand Shopify store.
+_PRICING_FALLBACK = """You are the Pricing Agent for a print-on-demand store selling on both Shopify and Etsy.
 Analyse the products and competitor intelligence provided. Give clear, actionable pricing recommendations.
 Rules:
-- T-shirt base cost ~$12, hoodie base cost ~$22. Never recommend below base cost + 40% margin.
+- T-shirt base cost ~$13, hoodie ~$23, long sleeve ~$15, crewneck ~$18, mug ~$6, tote ~$10, tumbler ~$15, sticker ~$4, hat ~$19, apron ~$20. Never recommend below base cost + 40% margin.
 - Round all prices to .99 (e.g. $24.99, $29.99).
 - If competitors charge 15%+ more, recommend RAISE.
 - If a product has zero sales and has been live 14+ days, recommend LOWER by $3-5 as a test.
 - Otherwise KEEP.
 - Be specific: give exact recommended price per product.
 - Keep each product note to one sentence.
-- End with a 2-3 sentence overall strategy summary."""
+- End with a 2-3 sentence overall pricing strategy summary."""
 
 
 def _shopify_headers() -> dict:
@@ -67,6 +68,72 @@ async def apply_price_change(variant_id: int, new_price: str) -> dict:
         )
         r.raise_for_status()
         return r.json().get("variant", {})
+
+
+async def apply_etsy_price_change(listing_id: int, new_price: float) -> dict:
+    return await etsy_client.update_listing_price(listing_id, new_price)
+
+
+def _parse_etsy_price(price_data) -> float:
+    """Etsy returns price as {amount, divisor} or a plain float."""
+    if isinstance(price_data, dict):
+        divisor = price_data.get("divisor") or 100
+        return price_data.get("amount", 0) / divisor
+    return float(price_data or 0)
+
+
+async def _fetch_etsy_listings() -> list:
+    if not etsy_client.is_configured():
+        return []
+    return await etsy_client.fetch_listings(state="active", limit=250)
+
+
+async def _fetch_etsy_receipts() -> list:
+    if not etsy_client.is_configured():
+        return []
+    return await etsy_client.fetch_receipts(limit=250)
+
+
+def _build_etsy_product_stats(listings: list, receipts: list) -> list:
+    # Build sales map: listing_id -> {units_sold, last_sale_ts}
+    sales: dict[int, dict] = {}
+    for receipt in receipts:
+        if not receipt.get("was_paid"):
+            continue
+        sale_ts = receipt.get("create_timestamp") or receipt.get("created_timestamp") or 0
+        for tx in receipt.get("transactions", []):
+            lid = tx.get("listing_id")
+            if lid is None:
+                continue
+            if lid not in sales:
+                sales[lid] = {"units_sold": 0, "last_sale_ts": 0}
+            sales[lid]["units_sold"] += tx.get("quantity", 1)
+            if sale_ts > sales[lid]["last_sale_ts"]:
+                sales[lid]["last_sale_ts"] = sale_ts
+
+    now = datetime.now(timezone.utc)
+    result = []
+    for listing in listings:
+        lid = listing.get("listing_id")
+        stat = sales.get(lid, {"units_sold": 0, "last_sale_ts": 0})
+        price = _parse_etsy_price(listing.get("price", 0))
+        created_ts = listing.get("original_creation_timestamp") or listing.get("creation_timestamp") or 0
+        days_live = int((now.timestamp() - created_ts) / 86400) if created_ts else None
+        last_sale_ts = stat["last_sale_ts"]
+        days_since_sale = int((now.timestamp() - last_sale_ts) / 86400) if last_sale_ts else None
+
+        result.append({
+            "listing_id": lid,
+            "title": listing.get("title", ""),
+            "price": price,
+            "units_sold": stat["units_sold"],
+            "days_live": days_live,
+            "days_since_sale": days_since_sale,
+            "views": listing.get("views", 0),
+        })
+
+    result.sort(key=lambda x: -x["units_sold"])
+    return result
 
 
 def _build_product_stats(products: list, orders: list) -> list:
@@ -141,27 +208,41 @@ async def _gather_market_intel() -> str:
     return await loop.run_in_executor(None, _search_competitor_prices)
 
 
-async def _run_analysis(product_stats: list, market_intel: str) -> tuple[str, str]:
-    if not product_stats:
+async def _run_analysis(
+    product_stats: list,
+    market_intel: str,
+    etsy_stats: list | None = None,
+) -> tuple[str, str]:
+    if not product_stats and not etsy_stats:
         return "No active products to analyse.", "none"
 
-    products_text = "\n".join(
-        f"- \"{p['title']}\" | current price: ${p['price']:.2f} | "
-        f"units sold: {p['units_sold']} | "
-        f"days live: {p['days_live'] or 'unknown'} | "
-        f"days since last sale: {p['days_since_sale'] if p['days_since_sale'] is not None else 'never sold'}"
+    def _last_sale(p: dict) -> str:
+        return f"{p['days_since_sale']}d ago" if p["days_since_sale"] is not None else "never"
+
+    shopify_text = "\n".join(
+        f"- [Shopify] \"{p['title']}\" | ${p['price']:.2f} | "
+        f"{p['units_sold']} sold | {p['days_live'] or '?'}d live | last sale: {_last_sale(p)}"
         for p in product_stats
-    )
+    ) or "- None"
 
-    prompt = f"""Analyse pricing for these active Shopify print-on-demand products:
+    etsy_lines = ""
+    if etsy_stats:
+        etsy_lines = "\n\nETSY LISTINGS:\n" + "\n".join(
+            f"- [Etsy] \"{p['title']}\" | ${p['price']:.2f} | "
+            f"{p['units_sold']} sold | {p['days_live'] or '?'}d live | last sale: {_last_sale(p)} | {p['views']} views"
+            for p in etsy_stats
+        )
 
-PRODUCTS:
-{products_text}
+    prompt = f"""Analyse pricing for these active print-on-demand products on Shopify and Etsy:
+
+SHOPIFY PRODUCTS:
+{shopify_text}{etsy_lines}
 
 MARKET INTELLIGENCE:
 {market_intel or 'No live data available — use general POD pricing knowledge.'}
 
 For each product give:
+- Platform (Shopify / Etsy)
 - Action: RAISE / LOWER / KEEP
 - Recommended price (if changing)
 - One-sentence reason
@@ -187,17 +268,26 @@ def _save_report(data: dict) -> str:
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     md_path = os.path.join(PRICING_DIR, f"pricing_{ts}.md")
 
-    products_md = "\n".join(
+    shopify_md = "\n".join(
         f"- {p['title']} | ${p['price']:.2f} | {p['units_sold']} sold | "
         f"{p['days_live'] or '?'}d live"
         for p in data.get("product_stats", [])
     ) or "- No active products"
 
+    etsy_section = ""
+    if data.get("etsy_product_stats"):
+        etsy_md = "\n".join(
+            f"- {p['title']} | ${p['price']:.2f} | {p['units_sold']} sold | "
+            f"{p['days_live'] or '?'}d live | {p['views']} views"
+            for p in data["etsy_product_stats"]
+        )
+        etsy_section = f"\n## Etsy Listings\n{etsy_md}\n"
+
     md = f"""# Pricing Report — {datetime.utcnow().strftime('%Y-%m-%d %H:%M')} UTC
 
-## Products Analysed
-{products_md}
-
+## Shopify Products
+{shopify_md}
+{etsy_section}
 ## Pricing Recommendations
 {data.get('analysis', '')}
 
@@ -231,23 +321,41 @@ async def run_pricing() -> dict:
     except Exception as e:
         return {"error": f"Shopify products fetch failed: {e}", "shopify_error": True}
 
+    # Fetch all data sources in parallel
+    orders_task         = asyncio.create_task(_fetch_orders())
+    etsy_listings_task  = asyncio.create_task(_fetch_etsy_listings())
+    etsy_receipts_task  = asyncio.create_task(_fetch_etsy_receipts())
+    market_intel_task   = asyncio.create_task(_gather_market_intel())
+
+    orders = []
     try:
-        orders = await _fetch_orders()
+        orders = await orders_task
     except Exception as e:
-        orders = []
-        print(f"[pricing] Orders fetch failed (continuing): {e}")
+        print(f"[pricing] Shopify orders fetch failed (continuing): {e}")
+
+    etsy_listings, etsy_receipts = [], []
+    try:
+        etsy_listings = await etsy_listings_task
+        etsy_receipts = await etsy_receipts_task
+    except Exception as e:
+        print(f"[pricing] Etsy fetch failed (continuing): {e}")
+
+    market_intel = await market_intel_task
 
     product_stats = _build_product_stats(products, orders)
-    market_intel = await _gather_market_intel()
-    analysis, model_used = await _run_analysis(product_stats, market_intel)
+    etsy_stats    = _build_etsy_product_stats(etsy_listings, etsy_receipts)
+
+    analysis, model_used = await _run_analysis(product_stats, market_intel, etsy_stats)
 
     data = {
-        "run_date": datetime.now(_CST).strftime("%Y-%m-%d"),
-        "products_analysed": len(product_stats),
-        "product_stats": product_stats,
-        "market_intel": market_intel,
-        "analysis": analysis,
-        "model_used": model_used,
+        "run_date":               datetime.now(_CST).strftime("%Y-%m-%d"),
+        "products_analysed":      len(product_stats),
+        "etsy_listings_analysed": len(etsy_stats),
+        "product_stats":          product_stats,
+        "etsy_product_stats":     etsy_stats,
+        "market_intel":           market_intel,
+        "analysis":               analysis,
+        "model_used":             model_used,
     }
 
     data["report_path"] = _save_report(data)
