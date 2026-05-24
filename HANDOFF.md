@@ -49,14 +49,17 @@ WhatsApp/browser → /api/chat/ceo/instruct → _classify_intent()
 - Shopify: 7 active products, 0 paid orders, $0 revenue (30 days)
 - Etsy: 9 active listings, 0 paid receipts, $0 revenue (30 days)
 
+### Follow-Up Fix (same session)
+Zurg was adding unsolicited follow-up questions and "what would you like to do?" prompts at the end of answers. Fixed in two places:
+- `store_query` prompt: added "Do not ask follow-up questions. Do not suggest next steps unless the owner asked for them."
+- Zurg's identity file (`rooms/captain/agents/zurg/identity.md`): added two "What You Don't Do" rules — no unsolicited follow-up questions, no "what would you like to do?" endings. This affects ALL Zurg responses (chat, research ack, etc.), not just store queries.
+
 ### What's NOT Done
 - "what's our best seller?" → correctly triggers store_query, but with zero sales the answer is always "no sales yet". Will be useful once orders come in.
 - Etsy OAuth token can expire (403 on receipts seen in logs) — if expired, snapshot skips Etsy gracefully and Zurg mentions it.
 
 ### Next Session
-- Check if Etsy OAuth tokens need refreshing (saw 403 in logs on receipts endpoint)
-- Consider adding pipeline metrics to the snapshot (briefs run, verdicts, approval rate) so Zurg can answer "how's the pipeline going?"
-- Consider asking Zurg "what's our best seller?" once first orders arrive to verify revenue calculation
+Audit every Etsy listing field to make sure the Factory agent fills them all correctly. See next-session prompt below.
 
 ---
 

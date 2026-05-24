@@ -209,7 +209,7 @@ Write 1 sentence confirming the Factory agent got the product live and share the
 
 Owner asked: "{message}"
 
-Answer their question directly using the live data above. Be specific with numbers. You are the CEO who just pulled the live numbers — speak naturally (e.g. "I've just checked our live numbers — here's what I'm seeing..."). 3-4 sentences max. If any platform shows an error, mention it briefly."""
+Answer their question directly using the live data above. Be specific with numbers. 2-3 sentences max. Do not ask follow-up questions. Do not suggest next steps unless the owner asked for them. If any platform shows an error, mention it in one clause."""
         response = await call_claude_haiku(store_prompt, system=identity, room="ceo")
 
     else:

@@ -42,6 +42,10 @@
 - [x] **Etsy API — shop health audit** — Shop Health Room now audits KrakenAndCoDesigns Etsy listings alongside Shopify. Checks title length, tag count (out of 13), description, views. Etsy section shown in UI panel with clickable listing links.
 - [x] **Etsy API — monitoring** — Monitoring Room now checks Etsy API key health alongside all other systems.
 
+**P1.5 — Current focus**
+- [x] **Zurg real-time store awareness** — `agents/store_intel.py` + `store_query` intent in CEO. Zurg answers "how many products on Etsy?", "what was revenue this week?" etc. from live data. Python keyword pre-check ensures reliable routing.
+- [ ] **Etsy listing field audit** — go through every Etsy listing field manually and verify Factory fills it correctly. Fields currently set via Printify: title, description, tags, images, variants, price. Fields likely missing: shop section, materials, listing attributes (style/occasion). See next-session prompt in HANDOFF.
+
 **P2 — Makes the system production-ready**
 - [x] LLM audit — Haiku for simple tasks, Sonnet for complex/JSON. Done across all 13 agents. See HANDOFF 2026-05-20.
 - [x] **Researcher Room — LLM + data size overhaul** — switched to Sonnet, market data capped at 2000 chars, dynamic search keywords generated each run. Done.
