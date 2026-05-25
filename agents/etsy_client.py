@@ -17,6 +17,7 @@ After setup, access tokens auto-refresh every hour. Refresh tokens never expire.
 
 import os
 import time
+import asyncio
 import hashlib
 import base64
 import httpx
@@ -25,9 +26,10 @@ from pathlib import Path
 ETSY_BASE  = "https://openapi.etsy.com/v3"
 TOKEN_URL  = "https://api.etsy.com/v3/public/oauth/token"
 
-ETSY_CLIENT_ID     = os.getenv("ETSY_API_KEY", "")
-ETSY_SHARED_SECRET = os.getenv("ETSY_SHARED_SECRET", "")
-ETSY_SHOP_ID       = os.getenv("ETSY_SHOP_ID", "")
+ETSY_CLIENT_ID          = os.getenv("ETSY_API_KEY", "")
+ETSY_SHARED_SECRET      = os.getenv("ETSY_SHARED_SECRET", "")
+ETSY_SHOP_ID            = os.getenv("ETSY_SHOP_ID", "")
+ETSY_PRODUCTION_PARTNER_ID = int(os.getenv("ETSY_PRODUCTION_PARTNER_ID", "0")) or None
 
 # Cached per process to avoid hammering the API on every listing
 _shipping_profiles:  list[dict] | None = None
@@ -48,6 +50,42 @@ _PROFILE_KEYWORDS: dict[str, list[str]] = {
     "cotton apron":        ["apron", "accessories"],
 }
 
+# Shop section IDs — map product type to Etsy shop section
+_SHOP_SECTIONS: dict[str, int] = {
+    "unisex t-shirt":      58696947,  # Apparel
+    "t-shirt":             58696947,
+    "long sleeve":         58696947,
+    "long sleeve t-shirt": 58696947,
+    "hoodie":              58696947,
+    "hooded sweatshirt":   58696947,
+    "crewneck sweatshirt": 58696947,
+    "classic dad cap":     58696947,
+    "cotton apron":        58696947,
+    "ceramic mug":         58697807,  # Mugs & Drinkware
+    "tumbler":             58697807,
+    "tote bag":            58697811,  # Accessories
+    "die-cut sticker":     58696943,  # Stickers
+}
+
+
+# Materials per product type (up to 5 shown on Etsy listing)
+_MATERIALS: dict[str, list[str]] = {
+    "unisex t-shirt":      ["Cotton"],
+    "t-shirt":             ["Cotton"],
+    "long sleeve":         ["Cotton"],
+    "long sleeve t-shirt": ["Cotton"],
+    "hoodie":              ["Cotton", "Polyester"],
+    "hooded sweatshirt":   ["Cotton", "Polyester"],
+    "crewneck sweatshirt": ["Cotton", "Polyester"],
+    "ceramic mug":         ["Ceramic"],
+    "tote bag":            ["Cotton", "Canvas"],
+    "tumbler":             ["Stainless Steel"],
+    "die-cut sticker":     ["Vinyl"],
+    "classic dad cap":     ["Cotton", "Polyester", "Spandex"],
+    "cotton apron":        ["Cotton", "Polyester"],
+}
+
+
 # Etsy taxonomy IDs per product type (affects browse category)
 _TAXONOMY_IDS = {
     "unisex t-shirt":     68887447,
@@ -56,6 +94,7 @@ _TAXONOMY_IDS = {
     "hooded sweatshirt":  68887445,
     "crewneck sweatshirt":68887445,
     "long sleeve":        68887447,
+    "long sleeve t-shirt": 68887447,
     "ceramic mug":        5765,
     "tote bag":           68887455,
     "tumbler":            5765,       # drinkware category
@@ -254,8 +293,9 @@ async def create_listing(
         "is_supply":           False,
         "type":                "physical",
         "state":               "active",
-        "readiness_state_id":  1,
     }
+    if ETSY_PRODUCTION_PARTNER_ID:
+        payload["production_partner_ids"] = [ETSY_PRODUCTION_PARTNER_ID]
     if return_policy_id:
         payload["return_policy_id"] = return_policy_id
 
@@ -292,6 +332,65 @@ async def upload_listing_image(listing_id: int, image_disk_path: str, rank: int 
         return r.json()
 
 
+async def fetch_listing_images(listing_id: int) -> list[dict]:
+    """Return existing images on an Etsy listing with their listing_image_ids."""
+    token = await _get_token()
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(
+            f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}/images",
+            headers=_headers(token),
+        )
+        r.raise_for_status()
+        return r.json().get("results", [])
+
+
+async def delete_listing_image(listing_id: int, listing_image_id: int) -> None:
+    token = await _get_token()
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.delete(
+            f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}/images/{listing_image_id}",
+            headers=_headers(token),
+        )
+        if not r.is_success:
+            raise RuntimeError(f"Etsy image delete {r.status_code}: {r.text}")
+
+
+async def replace_listing_images(listing_id: int, image_urls: list[str]) -> None:
+    """Delete all existing Etsy listing images and upload a curated set from Printify CDN URLs."""
+    existing = await fetch_listing_images(listing_id)
+    for img in existing:
+        try:
+            await delete_listing_image(listing_id, img["listing_image_id"])
+        except Exception as e:
+            print(f"[etsy] Could not delete image {img['listing_image_id']}: {e}")
+
+    token = await _get_token()
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "x-api-key":     f"{ETSY_CLIENT_ID}:{ETSY_SHARED_SECRET}",
+    }
+    for rank, url in enumerate(image_urls, start=1):
+        try:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                image_bytes = r.content
+            async with httpx.AsyncClient(timeout=60) as client:
+                r = await client.post(
+                    f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}/images",
+                    headers=headers,
+                    files={"image": (f"mockup_{rank}.jpg", image_bytes, "image/jpeg")},
+                    data={"rank": rank},
+                )
+                if not r.is_success:
+                    print(f"[etsy] Image upload failed rank {rank}: {r.status_code}: {r.text}")
+                else:
+                    print(f"[etsy] Uploaded image rank {rank}/{len(image_urls)}")
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            print(f"[etsy] Image upload error rank {rank}: {e}")
+
+
 def listing_url(listing_id: int) -> str:
     return f"https://www.etsy.com/listing/{listing_id}"
 
@@ -321,6 +420,84 @@ async def fetch_listings(state: str = "active", limit: int = 100) -> list[dict]:
                 break
             offset += len(batch)
     return results
+
+
+async def update_listing(
+    listing_id: int,
+    product_type: str = "",
+    title: str | None = None,
+    description: str | None = None,
+    tags: list[str] | None = None,
+) -> dict:
+    """
+    Patch an Etsy listing after Printify publishes it.
+    Sets all fields Printify doesn't control: category, shipping, return policy,
+    production partner, who_made, when_made.
+    """
+    token               = await _get_token()
+    shipping_profile_id = await _get_shipping_profile_id(product_type)
+    return_policy_id    = await _get_return_policy_id()
+
+    payload: dict = {
+        "taxonomy_id":         _taxonomy_id(product_type),
+        "shipping_profile_id": shipping_profile_id,
+        "who_made":            "i_did",
+        "when_made":           "made_to_order",
+        "type":                "physical",
+        "is_supply":           False,
+        "materials":           _MATERIALS.get(product_type.lower(), []),
+        "shop_section_id":     _SHOP_SECTIONS.get(product_type.lower()),
+    }
+    if title:
+        payload["title"] = title[:140]
+    if description:
+        payload["description"] = description
+    if tags:
+        payload["tags"] = [t.strip()[:20] for t in tags[:13]]
+    if ETSY_PRODUCTION_PARTNER_ID:
+        payload["production_partner_ids"] = [ETSY_PRODUCTION_PARTNER_ID]
+    if return_policy_id:
+        payload["return_policy_id"] = return_policy_id
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.patch(
+            f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}",
+            json=payload,
+            headers=_headers(token),
+        )
+        if not r.is_success:
+            raise RuntimeError(f"Etsy update {r.status_code}: {r.text}")
+        return r.json()
+
+
+async def set_listing_flags(
+    listing_id: int,
+    featured: bool | None = None,
+    auto_renew: bool | None = None,
+) -> dict:
+    """
+    Toggle featured status and/or auto-renewal on an existing listing.
+    Called by Pricing Room / Shop Health agent for top performers — not by the factory.
+    Pass only the flags you want to change; omit the rest.
+    """
+    payload = {}
+    if featured is not None:
+        payload["featured_rank"] = 1 if featured else -1
+    if auto_renew is not None:
+        payload["should_auto_renew"] = auto_renew
+    if not payload:
+        return {}
+
+    token = await _get_token()
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.patch(
+            f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}",
+            json=payload,
+            headers=_headers(token),
+        )
+        if not r.is_success:
+            raise RuntimeError(f"Etsy flag update {r.status_code}: {r.text}")
+        return r.json()
 
 
 async def update_listing_price(listing_id: int, price_usd: float) -> dict:

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import asyncio
 from datetime import datetime, timezone, timedelta
@@ -89,13 +90,60 @@ async def run_factory(input: dict) -> dict:
         except Exception as e:
             print(f"[factory] Printify image upload failed: {e}")
 
+    def _select_etsy_images(images: list, preferred_variant_ids: list) -> list[str]:
+        """
+        Pick the best mockup URLs from a Shopify Printify product for the Etsy listing.
+        Stickers: 1 front (first size) + context lifestyle shots.
+        Aprons:   1 front (flat) from preferred color + on-person for all colors.
+        Totes:    front + person-front for preferred color, then other colors.
+        Default:  preferred color images first, max 10.
+        """
+        preferred_set = set(preferred_variant_ids)
+        pt = product_type.lower()
+
+        def label(img):
+            src = img.get("src", "")
+            return src.split("camera_label=")[-1] if "camera_label=" in src else "unknown"
+
+        def is_preferred(img):
+            return bool(preferred_set.intersection(img.get("variant_ids", [])))
+
+        if "sticker" in pt:
+            first = preferred_variant_ids[0] if preferred_variant_ids else None
+            if not first:
+                return []
+            first_imgs = [img for img in images if first in img.get("variant_ids", [])]
+            front   = [img["src"] for img in first_imgs if label(img) == "front"][:1]
+            context = [img["src"] for img in first_imgs if label(img).startswith("context")]
+            return front + context
+
+        elif "apron" in pt:
+            pref_imgs = [img for img in images if is_preferred(img)]
+            front     = [img["src"] for img in pref_imgs if label(img) == "front"][:1]
+            on_person = [img["src"] for img in images if label(img) == "on-person"]
+            return front + on_person
+
+        elif "tote" in pt:
+            pref_imgs  = [img for img in images if is_preferred(img)]
+            other_imgs = [img for img in images if not is_preferred(img)]
+            result = []
+            for img_set in [pref_imgs, other_imgs]:
+                result += [img["src"] for img in img_set if label(img) in ("front", "person-front")]
+            return result
+
+        else:
+            pref_imgs  = [img for img in images if is_preferred(img)]
+            other_imgs = [img for img in images if not is_preferred(img)]
+            return [img["src"] for img in (pref_imgs + other_imgs)][:10]
+
     # ── Step 1: Etsy ─────────────────────────────────────────────────────────
     # Run Etsy first — Etsy IS connected so publish triggers mockup generation.
     # We download the mockup here and reuse it for the Shopify listing too,
     # since the Shopify Printify shop may be disconnected and can't generate its own.
-    etsy_product_url = None
-    etsy_printify_id = None
-    mockup_path      = None   # will be reused by Shopify if found
+    etsy_product_url    = None
+    etsy_printify_id    = None
+    etsy_listing_id     = None
+    mockup_path         = None   # will be reused by Shopify if found
 
     if image_id and etsy_shop_id:
         try:
@@ -164,6 +212,22 @@ async def run_factory(input: dict) -> dict:
                 mockup_path = f"/assets/generated/{mockup_name}"
                 print(f"[factory] Mockup downloaded: {mockup_name}")
 
+            # Patch all fields Printify doesn't control
+            m = re.search(r'/listing/(\d+)/', etsy_url)
+            if m:
+                etsy_listing_id = int(m.group(1))
+                try:
+                    await etsy_client.update_listing(
+                        listing_id=etsy_listing_id,
+                        product_type=product_type,
+                        title=title,
+                        description=description,
+                        tags=input.get("tags") or input.get("keywords", []),
+                    )
+                    print(f"[factory] Etsy listing {etsy_listing_id} patched with full field set")
+                except Exception as e:
+                    print(f"[factory] Etsy listing update failed (non-fatal): {e}")
+
             append_fixed_cost_entry("factory", "etsy-listing-fee", 0.20)
 
             etsy_product_url = etsy_url
@@ -219,15 +283,48 @@ async def run_factory(input: dict) -> dict:
             shopify_url = f"https://{store}"
             print(f"[factory] Shopify URL not found after 90s — product is live but URL pending")
 
+        # Poll for Shopify's richer mockup set (lifestyle/context/person images).
+        # These generate after the standard front mockups — wait up to 120s.
+        shopify_preferred = sp.get("_preferred_variant_ids", [])
+        shopify_images: list = []
+        for _ in range(40):  # 40 * 3s = 120s
+            await asyncio.sleep(3)
+            sp_prod = await get_product(pid)
+            imgs = sp_prod.get("images", [])
+            labels = {img.get("src", "").split("camera_label=")[-1] for img in imgs if "camera_label=" in img.get("src", "")}
+            if labels - {"front"}:  # at least one non-front image exists
+                shopify_images = imgs
+                print(f"[factory] Shopify rich mockups ready: {labels}")
+                break
+        else:
+            shopify_images = sp_prod.get("images", []) if sp_prod else []
+            print(f"[factory] Shopify rich mockups not ready after 120s — using what's available")
+
         return {
             "printify_product_id": pid,
             "product_id":          pid,
             "product_url":         shopify_url,
             "storefront_url":      shopify_url,
             "mockup_used":         bool(mockup_path),
+            "shopify_images":      shopify_images,
+            "shopify_preferred":   shopify_preferred,
         }
 
     shopify_result = await _shopify_flow()
+
+    # Replace Etsy listing images with curated set from Shopify's richer mockup set
+    if etsy_listing_id and shopify_result.get("shopify_images"):
+        try:
+            selected = _select_etsy_images(
+                shopify_result["shopify_images"],
+                shopify_result.get("shopify_preferred", []),
+            )
+            if selected:
+                print(f"[factory] Replacing Etsy images with {len(selected)} curated mockups...")
+                await etsy_client.replace_listing_images(etsy_listing_id, selected)
+                print(f"[factory] Etsy images updated")
+        except Exception as e:
+            print(f"[factory] Etsy image replacement failed (non-fatal): {e}")
 
     await notify(f"✅ Shopify live: {title}\n{shopify_result['product_url']}")
     if etsy_product_url:

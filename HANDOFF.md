@@ -4,6 +4,92 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-24 — Etsy Listing Field Completeness Audit (DONE)
+
+### What We Did
+Full audit of every Etsy listing field. Unblocked the direct Etsy API path, wired it into the factory as a post-publish patch, and fixed photos, materials, shop sections, and more.
+
+### Key Changes
+
+**Production Partner unblocked**
+- Added Printify as a Production Partner in Etsy Seller Dashboard (manual step, done)
+- Fetched partner ID (5664695) and added to `.env` as `ETSY_PRODUCTION_PARTNER_ID`
+- Fixed `etsy_client.py` — replaced broken `readiness_state_id: 1` with `production_partner_ids: [5664695]`
+- Refreshed Etsy OAuth tokens (were expired)
+
+**New hybrid publish flow in `factory_room_mvp.py`**
+- Printify still creates + publishes to Etsy (maintains fulfillment link)
+- After publish, `etsy_client.update_listing()` immediately patches all fields Printify doesn't control
+- Fields now set via direct API patch: `taxonomy_id`, `shipping_profile_id`, `return_policy_id`, `production_partner_ids`, `who_made`, `when_made`, `type`, `is_supply`, `materials`, `shop_section_id`
+
+**New `etsy_client.py` functions**
+- `update_listing()` — PATCH all metadata fields after Printify publishes
+- `set_listing_flags()` — toggle `featured_rank` and `should_auto_renew` for top performers (called by Pricing Room / Shop Health agent, not factory)
+- `fetch_listing_images()`, `delete_listing_image()`, `replace_listing_images()` — image management
+
+**Materials per product type** added to `etsy_client.py` (`_MATERIALS` dict)
+
+**Shop sections** — created 4 sections in Etsy shop and mapped all 10 product types:
+- Apparel (58696947): T-Shirt, Hoodie, Long Sleeve, Crewneck, Cap, Apron
+- Stickers (58696943): Die-Cut Sticker
+- Mugs & Drinkware (58697807): Ceramic Mug, Tumbler
+- Accessories (58697811): Tote Bag
+
+**Curated Etsy photo selection** — factory now:
+1. Creates both Etsy + Shopify Printify products as before
+2. Polls Shopify product (up to 120s) for rich mockups (context/lifestyle/person shots)
+3. Filters by `camera_label` per product type via `_select_etsy_images()`:
+   - Stickers: 1 `front` (first size) + `context-*` lifestyle shots
+   - Aprons: 1 `front` (flat) + `on-person` for all colors
+   - Totes: `front` + `person-front` for preferred color
+   - Default: preferred color first, max 10
+4. Calls `replace_listing_images()` to delete Printify's basic images and upload curated set
+
+### Audit Results — Full Field Status
+| Field | Status |
+|---|---|
+| Photos | ✅ curated per product type |
+| Category | ✅ direct API patch |
+| Physical/Digital | ✅ direct API patch |
+| When made | ✅ direct API patch |
+| Title | ✅ Printify |
+| Description | ✅ Printify |
+| Variations | ⚠️ investigate when first apparel listing goes live |
+| Personalization | ✅ off by default (correct) |
+| Tags | ✅ Printify |
+| Materials | ✅ direct API patch per product type |
+| Primary/Secondary color | ✅ intentionally skipped |
+| Sustainability | ✅ intentionally blank |
+| Category-specific attributes | ✅ intentionally skipped |
+| Price | ✅ Printify |
+| Quantity | ✅ Printify |
+| Processing profile | ✅ Printify (3-5 days) |
+| Shipping | ✅ direct API patch |
+| Returns | ✅ direct API patch |
+| Who made it | ✅ direct API patch |
+| What is it | ✅ direct API patch |
+| How shop produces item | ⚠️ UI-only field, no API — must set manually |
+| Production partner | ✅ direct API patch |
+| Shop section | ✅ direct API patch (4 sections mapped) |
+| Feature listing | ✅ `set_listing_flags()` available |
+| Renewal options | ✅ `set_listing_flags()` available |
+
+### What's Next
+Max is clearing all listings from Etsy and Shopify for a clean slate test tomorrow. When the first new listings go live, verify:
+1. All fields are populated correctly on a live Etsy listing
+2. Lifestyle/context mockups appear on sticker listings
+3. Flat + model images both appear on apron listings
+4. Model images appear on tote listings
+5. Variations on apparel (T-shirts, hoodies) — check if Color + Size appear as separate dropdowns or combined. If combined, investigate Etsy inventory API restructuring.
+
+### Gotchas
+- Etsy OAuth tokens expire hourly — `etsy_client._get_token()` auto-refreshes but if the refresh token is also stale, visit `http://localhost:9000/auth/etsy` to re-authorize
+- The `replace_listing_images()` step adds ~2 minutes to the factory flow (120s Shopify mockup poll + upload time). Total factory time is now ~8-10 minutes per product.
+- `set_listing_flags()` is NOT called by the factory — it's for future use by Pricing Room / Shop Health agent when products perform well
+- Production partner ID 5664695 is hardcoded in `.env` as `ETSY_PRODUCTION_PARTNER_ID`
+
+---
+
 ## Session: 2026-05-24 — Zurg Real-Time Store Awareness (DONE)
 
 ### What We Built
