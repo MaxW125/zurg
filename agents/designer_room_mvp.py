@@ -49,6 +49,23 @@ _PRODUCT_IMAGEN_CONSTRAINTS = {
     "Cotton Apron":    "centered vertical composition, bold and readable from 3 feet",
 }
 
+# Imagen 4 aspect ratios matched to actual Printify placeholder dimensions.
+# Printify placeholder px (width × height):
+#   Hat:     1200 × 675   (16:9 exactly)
+#   Mug 11:  2475 × 1155  (2.14:1 — 16:9 reduces cropping from ~57% to ~14% vs square)
+#   Tumbler: similar wide wrap-around → 16:9
+#   Apron:   2953 × 3780  (0.78:1 → 3:4 is closest)
+#   Tote:    3000 × 3600  (0.83:1 → 3:4 is closest)
+#   Sticker: 600  × 600   (1:1 exactly)
+#   Apparel: roughly square → 1:1 (default)
+_PRODUCT_ASPECT_RATIOS = {
+    "Classic Dad Cap": "16:9",
+    "Ceramic Mug":     "16:9",
+    "Tumbler":         "16:9",
+    "Cotton Apron":    "3:4",
+    "Tote Bag":        "3:4",
+}
+
 
 def _log_design(niche: str, product_type: str, slug: str) -> None:
     from datetime import timezone, timedelta
@@ -221,11 +238,17 @@ async def run_designer(input: dict) -> dict:
         image_prompt = image_prompt.rstrip(". ") + ", " + composition_constraint
 
     # Run sync Imagen call in thread so we don't block the event loop
+    product_type   = input.get("product_type", "")
+    aspect_ratio   = _PRODUCT_ASPECT_RATIOS.get(product_type, "1:1")
+
     def _generate():
         return client.models.generate_images(
             model=IMAGEN_MODEL,
             prompt=image_prompt,
-            config=types.GenerateImagesConfig(number_of_images=1),
+            config=types.GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio=aspect_ratio,
+            ),
         )
 
     try:
