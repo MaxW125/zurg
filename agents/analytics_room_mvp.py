@@ -40,7 +40,7 @@ def _shopify_url(path: str) -> str:
 async def _fetch_shopify_products() -> list:
     async with httpx.AsyncClient(timeout=30) as client:
         r = await client.get(
-            _shopify_url("products.json?limit=250&status=any"),
+            _shopify_url("products.json?limit=250&published_status=any"),
             headers=_shopify_headers(),
         )
         r.raise_for_status()
