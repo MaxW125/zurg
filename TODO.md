@@ -44,7 +44,11 @@
 
 **P1.5 — Current focus**
 - [x] **Zurg real-time store awareness** — `agents/store_intel.py` + `store_query` intent in CEO. Zurg answers "how many products on Etsy?", "what was revenue this week?" etc. from live data. Python keyword pre-check ensures reliable routing.
-- [ ] **Etsy listing field audit** — go through every Etsy listing field manually and verify Factory fills it correctly. Fields currently set via Printify: title, description, tags, images, variants, price. Fields likely missing: shop section, materials, listing attributes (style/occasion). See next-session prompt in HANDOFF.
+- [x] **Etsy listing field audit** — all fields verified and patched. Category, shipping, returns, who_made, materials, shop sections (4 sections), production partner, free shipping profile all set via direct Etsy API patch after each Printify publish. See HANDOFF 2026-05-24.
+- [x] **Etsy image replacement system** — curated mockup selection per product type (stickers, aprons, totes, mugs, hats, default). Upload-first/delete-after pattern. Shopify images auto-synced to match Etsy after each publish. Retroactively patched all 12 existing listings.
+- [x] **Free shipping for all products** — created "Free Shipping — All Products" profile (ID <ETSY_SHIPPING_PROFILE_ID>) on Etsy. All new listings use it automatically. Retroactively applied to all 10 active listings. 2 removed listings (Rainbow Bridge sticker, Vet Tech sticker) need manual republish.
+- [x] **Correct image aspect ratios** — Imagen 4 now generates the right shape per product: mugs/hats/tumblers=16:9, aprons/totes=3:4, everything else=1:1. Eliminates cropping on non-square products.
+- [x] **Shopify image sync** — after each factory run, Shopify product images are replaced to match the curated Etsy image set. Wired into factory flow, automatic for all future listings.
 
 **P2 — Makes the system production-ready**
 - [x] LLM audit — Haiku for simple tasks, Sonnet for complex/JSON. Done across all 13 agents. See HANDOFF 2026-05-20.

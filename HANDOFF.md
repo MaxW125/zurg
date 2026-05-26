@@ -4,6 +4,95 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-25 — Image Quality, Free Shipping & Store Polish (DONE)
+
+### What We Did
+Full debug and polish pass on the end-to-end pipeline. No new rooms built — this was a fix session after yesterday's Etsy audit revealed several real-world issues on live listings.
+
+### Key Changes
+
+**Analytics — Shopify showing 0 products**
+- `products.json?status=any` silently returns empty array in API 2024-04
+- Fixed: switched to `published_status=any` in `analytics_room_mvp.py`
+- Analytics now correctly shows all 9 Shopify products
+
+**Image aspect ratios per product type (`designer_room_mvp.py`)**
+- Mugs and hats were getting square 1:1 images cropped onto wide print areas
+- Added `_PRODUCT_ASPECT_RATIOS` dict:
+  - `Ceramic Mug`, `Classic Dad Cap`, `Tumbler` → `16:9`
+  - `Cotton Apron`, `Tote Bag` → `3:4`
+  - All others (T-Shirt, Sticker, etc.) → `1:1` (default)
+- Imagen 4 now receives the correct `aspect_ratio` config per product
+
+**Sticker image selection fix (`factory_room_mvp.py`)**
+- Sticker variants are *sizes* (2x2, 3x3 etc.), not colors — `preferred_variant_ids` was always empty
+- Was returning `[]` — Etsy got 5 identical placeholder images
+- Fixed: falls back to first variant_id found in images list, then grabs `front` + `context-*` shots
+
+**Apron image selection fix (`factory_room_mvp.py`)**
+- When `preferred_set` was empty (e.g. only 1 color enabled), apron returned no images
+- Fixed: `pref_imgs = [img for img in images if is_preferred(img)] or images` — falls back to all images
+
+**Tote primary image fix (`factory_room_mvp.py` + `etsy_client.py`)**
+- Tote primary was showing black model shot instead of natural flat design
+- Fixed ordering in `_select_etsy_images()`: flat `front` first, then `person-front`, preferred color only
+- Retroactive patch applied to both Etsy and Shopify tote listings
+
+**`fetch_listing_images` URL fix (`etsy_client.py`)**
+- GET endpoint does not include `/shops/{shop_id}/` — was returning 404
+- Fixed: `GET /application/listings/{id}/images` (no shop_id)
+
+**Image replacement: upload-first pattern (`etsy_client.py`)**
+- Was deleting old images first → Etsy 400 "listing requires ≥1 image"
+- Fixed `replace_listing_images()`: upload all new images first, then delete originals
+
+**Free shipping for all products (`etsy_client.py`)**
+- Existing shipping profile was charging buyers
+- Created "Free Shipping — All Products" Etsy profile (ID <ETSY_SHIPPING_PROFILE_ID>, origin: 98052 WA)
+- `_get_shipping_profile_id()` now prioritises any profile with "free" in the title
+- All new listings automatically get free shipping
+
+**Shopify image sync (`factory_room_mvp.py`)**
+- After Etsy image replacement, Shopify product images are now auto-synced to match
+- Resolves Shopify handle → product ID → deletes all existing images → re-uploads ranked set
+- Wired into `_etsy_flow()` — automatic for every future publish
+
+**Retroactive patch — all 12 existing Etsy listings**
+- Images: re-ran `_select_etsy_images()` + `replace_listing_images()` on all active listings
+- Shop sections: 2 listings were missing sections (sticker + tote) — patched via API
+- Free shipping: all 10 active listings patched to free shipping profile
+- 2 listings in "removed" state (Rainbow Bridge Cat Memorial Sticker, Vet Tech Sticker) — Etsy blocks API edits on removed listings; needs manual republish for free shipping
+
+### What's Working Now
+- Designer generates correct aspect ratios for every product type
+- Stickers get 1 flat front + lifestyle context shots (not 5 identical placeholder images)
+- Aprons get flat front + on-person lifestyle shots
+- Totes lead with natural flat design, not model/black
+- Free shipping applied to all new AND existing Etsy listings
+- Shopify product images match Etsy automatically after each factory run
+- All 10 active Etsy listings have correct images, shop sections, and free shipping
+
+### End-of-Session Pipeline Test
+- Triggered factory run with soda_lover_humor T-shirt (from earlier in session)
+- Designer ran clean: background color detected (216, 31, 192), magenta stripped ✅
+- Factory created Etsy product `6a1500d0e03909eefe046f7c` (8 variants, black preferred) ✅
+- No 429 errors or 500s — pipeline healthy as of session close
+- Test was in mockup-wait phase (≤180s) when session ended; expected to complete cleanly
+
+### Gotchas
+- `preferred_variant_ids` is always empty for stickers — never rely on it for sticker image selection
+- Etsy blocks deletion of the last image — always upload new images before deleting old ones
+- `status=any` silently returns 0 products in Shopify REST API 2024-04 — use `published_status=any`
+- 2 removed Etsy listings (Rainbow Bridge + Vet Tech stickers) cannot be patched via API — need manual republish in Seller Dashboard to get free shipping
+
+### What's Next
+1. **Watch for first real sale** — store is clean, free shipping is on, products look good
+2. **Apparel variations audit** — when a T-shirt or hoodie listing goes live, verify Color and Size appear as separate dropdowns on Etsy (not combined). If combined, investigate Etsy inventory API restructuring.
+3. **Manually republish 2 removed sticker listings** (Rainbow Bridge Cat Memorial, Vet Tech) in Etsy Seller Dashboard to get free shipping applied
+4. **Next room or improvement** — consider: Pricing Room (dynamic repricing), or let the store run autonomously and focus on the 7-day test
+
+---
+
 ## Session: 2026-05-24 — Etsy Listing Field Completeness Audit (DONE)
 
 ### What We Did
