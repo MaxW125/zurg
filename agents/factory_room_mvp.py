@@ -132,11 +132,12 @@ async def run_factory(input: dict) -> dict:
             return front + on_person
 
         elif "tote" in pt:
+            # Natural flat front first (no model) → then model shots → then other colors.
             pref_imgs  = [img for img in images if is_preferred(img)]
             other_imgs = [img for img in images if not is_preferred(img)]
-            result = []
-            for img_set in [pref_imgs, other_imgs]:
-                result += [img["src"] for img in img_set if label(img) in ("front", "person-front")]
+            result  = [img["src"] for img in pref_imgs  if label(img) == "front"]
+            result += [img["src"] for img in pref_imgs  if label(img) == "person-front"]
+            result += [img["src"] for img in other_imgs if label(img) in ("front", "person-front")]
             return result
 
         else:
