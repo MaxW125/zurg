@@ -221,13 +221,18 @@ async def _get_shipping_profiles() -> list[dict]:
 
 async def _get_shipping_profile_id(product_type: str = "") -> int:
     profiles = await _get_shipping_profiles()
+    # Always prefer a free shipping profile if one exists
+    for p in profiles:
+        if "free" in p.get("title", "").lower():
+            print(f"[etsy] Using free shipping profile: {p['shipping_profile_id']}")
+            return p["shipping_profile_id"]
+    # Fall back to keyword match
     keywords = _PROFILE_KEYWORDS.get(product_type.lower(), [])
     for kw in keywords:
         for p in profiles:
             if kw in p.get("title", "").lower():
                 print(f"[etsy] Shipping profile matched: {p['shipping_profile_id']} ({p['title']})")
                 return p["shipping_profile_id"]
-    # Fall back to first profile
     print(f"[etsy] No shipping profile match for '{product_type}' — using first: {profiles[0]['title']}")
     return profiles[0]["shipping_profile_id"]
 
