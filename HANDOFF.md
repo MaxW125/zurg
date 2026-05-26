@@ -4,6 +4,58 @@ _Update this before ending a session or starting a new room. One section per ses
 
 ---
 
+## Session: 2026-05-25 (Part 2) — Per-Color Images, Shipping Cache & Category Fix (DONE)
+
+### What We Did
+Follow-up fixes after inspecting the live Dog Mom T-shirt listing. Three separate bugs found and fixed.
+
+### Key Changes
+
+**Per-color variation images on Etsy (`factory_room_mvp.py`, `etsy_client.py`, `printify_client.py`)**
+- When a buyer selects a color swatch on an Etsy T-shirt listing, they now see that color's mockup image
+- `printify_client.create_product` now returns `_variant_color_map` (`{variant_id: color_name}`) alongside `_preferred_variant_ids`
+- `_select_etsy_images` default case now returns preferred color first, then one front image per remaining color (ensuring each color has an uploadable image), then lifestyle fill to the 10-image cap
+- Added URL-based variant ID fallback in `_select_etsy_images` — Printify sometimes returns images with empty `variant_ids`; the fallback parses `/mockup/<pid>/<vid>/` from the CDN URL
+- `replace_listing_images` now fetches authoritative image IDs by rank after upload (Etsy's upload response was returning the same `listing_image_id` for every upload — unreliable)
+- Two new functions in `etsy_client.py`: `get_listing_color_property()` (fetches color property_id + value_ids from Etsy listing inventory) and `set_variation_images()` (POSTs to Etsy's variation-images endpoint to link each color to its swatch image)
+- Factory now calls both after image replacement, wired into every publish automatically
+- Dog Mom listing retroactively patched: 10 colors each linked to their own image
+
+**Image source fix — use Etsy Printify product, not Shopify (`factory_room_mvp.py`)**
+- Was using `shopify_result["shopify_images"]` for Etsy replacement — Shopify mockup poll breaks early (first non-front image), so only 2 colours were ready (7 images instead of 13)
+- Fixed: after Etsy listing ID is confirmed (~330s in), fetches fresh images from `get_product(etsy_pid, shop_id=etsy_shop_id)` — the Etsy Printify product has had 330s+ to generate all color mockups and is always complete
+- `etsy_variant_color` captured from the Etsy `create_product` response so variant IDs map correctly to this product's colors (not Shopify's)
+
+**Shipping profile cache removed (`etsy_client.py`)**
+- `_shipping_profiles` module-level cache caused the factory to use an old profile when a new one was created mid-session (without a restart)
+- Removed the cache entirely — profiles are now always fetched fresh. One extra API call per publish; with 5/day cap this is negligible
+- Return policy is still cached (it never changes)
+
+**`taxonomy_id` removed from `update_listing` (`etsy_client.py`)**
+- Root cause of shop section, shipping profile, and materials never being applied to T-shirts and stickers
+- The taxonomy IDs we had stored (`68887447` etc.) are invalid — Etsy was returning `400: Invalid taxonomy_id` which aborted the entire PATCH, so ALL other fields (section, shipping, materials) failed silently
+- Removed `taxonomy_id` from `update_listing` and `create_listing`, and deleted the `_TAXONOMY_IDS` dict and `_taxonomy_id()` helper entirely
+- Printify already sets a valid taxonomy on initial publish — we don't need to override it
+- Dog Mom listing retroactively patched: Apparel section (58696947), free shipping, Cotton materials now applied
+
+### Current State
+- Pipeline is fully clean — all known bugs fixed
+- Every new listing will get: correct images (all colors), per-color variation swatch images, shop section, free shipping, materials, production partner, return policy
+- Dog Mom T-shirt listing fully corrected (images, variation linking, section, shipping, materials)
+- Researcher sleeping until midnight CST — 5 products will publish overnight automatically
+
+### Gotchas
+- Etsy's upload response returns the same `listing_image_id` for every upload in a batch — always resolve IDs via `fetch_listing_images` by rank after upload, not from the upload response
+- Printify images often have `variant_ids: []` — always fall back to parsing the variant ID from the CDN URL (`/mockup/<pid>/<vid>/...`)
+- Never add `taxonomy_id` to Etsy listing updates — the IDs change and an invalid one aborts the entire PATCH silently
+
+### What's Next
+1. Check overnight autonomous run in the morning — verify new listings have section, free shipping, correct images, and variation swatch images all set correctly
+2. First sale monitoring — store is clean, free shipping is on, all product types publishing correctly
+3. Apparel variations audit — when a T-shirt or hoodie goes live, verify Color + Size show as separate dropdowns on Etsy
+
+---
+
 ## Session: 2026-05-25 — Image Quality, Free Shipping & Store Polish (DONE)
 
 ### What We Did

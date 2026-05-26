@@ -143,6 +143,14 @@ async def create_product(
     preferred_variant_ids = [v["id"] for v in color_groups.get(preferred_key, [])]
     print(f"[PRINTIFY] preferred_color={preferred_color!r}, {len(preferred_variant_ids)} variants in enabled set of {len(variants)}")
 
+    # Full variant_id → color_name map for all enabled variants (used by factory for variation-image linking)
+    enabled_ids = {v["id"] for v in variants}
+    variant_color_map: dict[int, str] = {}
+    for color_key, group in color_groups.items():
+        for v in group:
+            if v["id"] in enabled_ids:
+                variant_color_map[v["id"]] = color_key
+
     variant_list = [
         {
             "id": v["id"],
@@ -190,6 +198,7 @@ async def create_product(
         r.raise_for_status()
         product = r.json()
         product["_preferred_variant_ids"] = preferred_variant_ids
+        product["_variant_color_map"]     = variant_color_map
         return product
 
 

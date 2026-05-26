@@ -143,7 +143,30 @@ async def run_factory(input: dict) -> dict:
         else:
             pref_imgs  = [img for img in images if is_preferred(img)]
             other_imgs = [img for img in images if not is_preferred(img)]
-            return [img["src"] for img in (pref_imgs + other_imgs)][:10]
+
+            # Printify sometimes returns images with empty variant_ids — in that case
+            # variant-intersection can't identify the preferred colour. Fall back to
+            # checking whether the URL's embedded variant_id is in the preferred set.
+            if not pref_imgs and preferred_set:
+                import re as _re
+                def _url_vid(img):
+                    m = _re.search(r'/mockup/[^/]+/(\d+)/', img.get("src", ""))
+                    return int(m.group(1)) if m else None
+                pref_imgs  = [img for img in images if _url_vid(img) in preferred_set]
+                other_imgs = [img for img in images if _url_vid(img) not in preferred_set]
+
+            # Preferred colour images first, then one front per remaining colour
+            # (so variation-image linking can assign each colour its own swatch image),
+            # then fill remaining slots with lifestyle/back shots up to the 10-image cap.
+            other_fronts = []
+            seen_front_srcs = set()
+            for img in other_imgs:
+                if label(img) == "front" and img["src"] not in seen_front_srcs:
+                    other_fronts.append(img["src"])
+                    seen_front_srcs.add(img["src"])
+            other_rest = [img["src"] for img in other_imgs if img["src"] not in seen_front_srcs]
+            combined = [img["src"] for img in pref_imgs] + other_fronts + other_rest
+            return combined[:10]
 
     # ── Step 1: Etsy ─────────────────────────────────────────────────────────
     # Run Etsy first — Etsy IS connected so publish triggers mockup generation.
@@ -152,6 +175,9 @@ async def run_factory(input: dict) -> dict:
     etsy_product_url    = None
     etsy_printify_id    = None
     etsy_listing_id     = None
+    etsy_pid            = None
+    etsy_preferred      = []
+    etsy_variant_color  = {}
     mockup_path         = None   # will be reused by Shopify if found
 
     if image_id and etsy_shop_id:
@@ -168,8 +194,9 @@ async def run_factory(input: dict) -> dict:
                 shop_id=etsy_shop_id,
                 retail_price=blueprint.get("retail_price", 2999),
             )
-            etsy_pid          = ep["id"]
-            etsy_preferred    = ep.get("_preferred_variant_ids", [])
+            etsy_pid           = ep["id"]
+            etsy_preferred     = ep.get("_preferred_variant_ids", [])
+            etsy_variant_color = ep.get("_variant_color_map", {})  # variant_id → color name for this Etsy product
             print(f"[factory] Etsy product created: {etsy_pid} — waiting for mockups before publishing...")
 
             # Phase 1: poll up to 3 minutes for mockup images BEFORE publishing.
@@ -271,6 +298,8 @@ async def run_factory(input: dict) -> dict:
             retail_price=blueprint.get("retail_price", 2999),
         )
         pid = sp["id"]
+        # variant_id → lowercase color name — used later for Etsy variation-image linking
+        shopify_variant_color: dict[int, str] = sp.get("_variant_color_map", {})
         print(f"[factory] Shopify Printify product created: {pid}")
 
         await publish_product(pid)
@@ -317,21 +346,68 @@ async def run_factory(input: dict) -> dict:
             "mockup_used":         bool(mockup_path),
             "shopify_images":      shopify_images,
             "shopify_preferred":   shopify_preferred,
+            "variant_color":       shopify_variant_color,
         }
 
     shopify_result = await _shopify_flow()
 
-    # Replace Etsy listing images with curated set from Shopify's richer mockup set
-    if etsy_listing_id and shopify_result.get("shopify_images"):
+    # Replace Etsy listing images with curated set.
+    # Use the Etsy Printify product's own images — by this point (330s+ into the run)
+    # Printify has finished generating mockups for ALL enabled colors on the Etsy product.
+    # Using Shopify's mockup set instead would risk getting a partial set (only colors
+    # whose mockups finished within the 120s Shopify poll window).
+    if etsy_listing_id and etsy_pid:
         try:
+            fresh_etsy = await get_product(etsy_pid, shop_id=etsy_shop_id)
+            source_images = fresh_etsy.get("images", []) or shopify_result.get("shopify_images", [])
+            variant_color = etsy_variant_color  # maps this Etsy product's variant IDs → color names
+
+            # Build color_name → front mockup URL so we can link each color to its image.
+            # Printify sometimes sets variant_ids=[] on images — fall back to pulling the
+            # variant_id from the URL itself (Printify CDN path: /mockup/<pid>/<vid>/...).
+            color_front_urls: dict[str, str] = {}
+            for img in source_images:
+                if "camera_label=front" not in img.get("src", ""):
+                    continue
+                vids = img.get("variant_ids", [])
+                if not vids:
+                    m = re.search(r'/mockup/[^/]+/(\d+)/', img.get("src", ""))
+                    if m:
+                        vids = [int(m.group(1))]
+                for vid in vids:
+                    color = variant_color.get(vid, "")
+                    if color and color not in color_front_urls:
+                        color_front_urls[color] = img["src"]
+
             selected = _select_etsy_images(
-                shopify_result["shopify_images"],
-                shopify_result.get("shopify_preferred", []),
+                source_images,
+                etsy_preferred,
             )
             if selected:
                 print(f"[factory] Replacing Etsy images with {len(selected)} curated mockups...")
-                await etsy_client.replace_listing_images(etsy_listing_id, selected)
+                url_to_image_id = await etsy_client.replace_listing_images(etsy_listing_id, selected)
                 print(f"[factory] Etsy images updated")
+
+                # Link each color's front image to its Etsy variation value
+                if color_front_urls and url_to_image_id:
+                    try:
+                        prop_id, color_value_map = await etsy_client.get_listing_color_property(etsy_listing_id)
+                        if prop_id and color_value_map:
+                            variation_images = []
+                            for color_name, front_url in color_front_urls.items():
+                                img_id   = url_to_image_id.get(front_url)
+                                value_id = color_value_map.get(color_name)
+                                if img_id and value_id:
+                                    variation_images.append({
+                                        "property_id": prop_id,
+                                        "value_id":    value_id,
+                                        "image_id":    img_id,
+                                    })
+                            if variation_images:
+                                await etsy_client.set_variation_images(etsy_listing_id, variation_images)
+                                print(f"[factory] Linked {len(variation_images)} color variation images on Etsy")
+                    except Exception as e:
+                        print(f"[factory] Color variation linking failed (non-fatal): {e}")
 
                 # Mirror same images + order to Shopify so both stores are in sync
                 shopify_pid = shopify_result["printify_product_id"]

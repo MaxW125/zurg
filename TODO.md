@@ -49,6 +49,9 @@
 - [x] **Free shipping for all products** — created "Free Shipping — All Products" profile (ID <ETSY_SHIPPING_PROFILE_ID>) on Etsy. All new listings use it automatically. Retroactively applied to all 10 active listings. 2 removed listings (Rainbow Bridge sticker, Vet Tech sticker) need manual republish.
 - [x] **Correct image aspect ratios** — Imagen 4 now generates the right shape per product: mugs/hats/tumblers=16:9, aprons/totes=3:4, everything else=1:1. Eliminates cropping on non-square products.
 - [x] **Shopify image sync** — after each factory run, Shopify product images are replaced to match the curated Etsy image set. Wired into factory flow, automatic for all future listings.
+- [x] **Per-color variation images on Etsy** — each color swatch on a T-shirt/apparel listing now shows that color's mockup. `get_listing_color_property()` + `set_variation_images()` in `etsy_client.py`, wired into factory after image replacement. Etsy Printify product images used as source (complete all-color set) rather than Shopify's partial early-poll set.
+- [x] **`update_listing` taxonomy_id bug fixed** — invalid taxonomy IDs were causing `400: Invalid taxonomy_id` which silently aborted the entire listing PATCH (section, shipping, materials all failed). Removed `taxonomy_id` from all Etsy update calls; Printify sets a valid one on publish.
+- [x] **Shipping profile cache removed** — was causing new free-shipping profile to be ignored until server restart. Profiles now fetched fresh on every publish.
 
 **P2 — Makes the system production-ready**
 - [x] LLM audit — Haiku for simple tasks, Sonnet for complex/JSON. Done across all 13 agents. See HANDOFF 2026-05-20.

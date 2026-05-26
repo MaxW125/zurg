@@ -31,9 +31,9 @@ ETSY_SHARED_SECRET      = os.getenv("ETSY_SHARED_SECRET", "")
 ETSY_SHOP_ID            = os.getenv("ETSY_SHOP_ID", "")
 ETSY_PRODUCTION_PARTNER_ID = int(os.getenv("ETSY_PRODUCTION_PARTNER_ID", "0")) or None
 
-# Cached per process to avoid hammering the API on every listing
-_shipping_profiles:  list[dict] | None = None
-_return_policy_id:   int | None = None
+# Return policy is stable — cache it. Shipping profiles are NOT cached so a newly
+# created free-shipping profile is always picked up without needing a server restart.
+_return_policy_id: int | None = None
 
 # Keywords to match shipping profile titles to product types
 _PROFILE_KEYWORDS: dict[str, list[str]] = {
@@ -84,28 +84,6 @@ _MATERIALS: dict[str, list[str]] = {
     "classic dad cap":     ["Cotton", "Polyester", "Spandex"],
     "cotton apron":        ["Cotton", "Polyester"],
 }
-
-
-# Etsy taxonomy IDs per product type (affects browse category)
-_TAXONOMY_IDS = {
-    "unisex t-shirt":     68887447,
-    "t-shirt":            68887447,
-    "hoodie":             68887445,
-    "hooded sweatshirt":  68887445,
-    "crewneck sweatshirt":68887445,
-    "long sleeve":        68887447,
-    "long sleeve t-shirt": 68887447,
-    "ceramic mug":        5765,
-    "tote bag":           68887455,
-    "tumbler":            5765,       # drinkware category
-    "die-cut sticker":    69150931,   # stickers & decals
-    "classic dad cap":    68887444,   # hats & caps
-    "cotton apron":       68887455,
-}
-
-
-def _taxonomy_id(product_type: str) -> int:
-    return _TAXONOMY_IDS.get(product_type.lower(), 68887447)
 
 
 # ── Token management ──────────────────────────────────────────────────────────
@@ -201,10 +179,6 @@ def _headers(token: str) -> dict:
 # ── Shop profile helpers (cached) ─────────────────────────────────────────────
 
 async def _get_shipping_profiles() -> list[dict]:
-    global _shipping_profiles
-    if _shipping_profiles is not None:
-        return _shipping_profiles
-
     token = await _get_token()
     async with httpx.AsyncClient(timeout=15) as client:
         r = await client.get(
@@ -212,11 +186,11 @@ async def _get_shipping_profiles() -> list[dict]:
             headers=_headers(token),
         )
         r.raise_for_status()
-        _shipping_profiles = r.json().get("results", [])
+        profiles = r.json().get("results", [])
 
-    if not _shipping_profiles:
+    if not profiles:
         raise RuntimeError("No shipping profiles in Etsy shop — create one at etsy.com/your/shops/me/shipping-settings")
-    return _shipping_profiles
+    return profiles
 
 
 async def _get_shipping_profile_id(product_type: str = "") -> int:
@@ -292,7 +266,6 @@ async def create_listing(
         "price":               price,
         "who_made":            "i_did",
         "when_made":           "made_to_order",
-        "taxonomy_id":         _taxonomy_id(product_type),
         "shipping_profile_id": shipping_profile_id,
         "tags":                clean_tags,
         "is_supply":           False,
@@ -361,11 +334,13 @@ async def delete_listing_image(listing_id: int, listing_image_id: int) -> None:
             raise RuntimeError(f"Etsy image delete {r.status_code}: {r.text}")
 
 
-async def replace_listing_images(listing_id: int, image_urls: list[str]) -> None:
+async def replace_listing_images(listing_id: int, image_urls: list[str]) -> dict[str, int]:
     """Upload a curated set of images to an Etsy listing, replacing all existing ones.
 
     Upload-first order: new images go up first so the listing always has ≥1 image,
     then old images are deleted. Avoids the Etsy '≥1 image required' 400 error.
+
+    Returns {url: listing_image_id} for each successfully uploaded image.
     """
     old_ids = [img["listing_image_id"] for img in await fetch_listing_images(listing_id)]
 
@@ -374,7 +349,9 @@ async def replace_listing_images(listing_id: int, image_urls: list[str]) -> None
         "Authorization": f"Bearer {token}",
         "x-api-key":     f"{ETSY_CLIENT_ID}:{ETSY_SHARED_SECRET}",
     }
-    # Step 1 — upload new images
+    # Step 1 — upload new images (track rank order — Etsy's upload response sometimes
+    # returns the same listing_image_id for every call, so we resolve IDs afterward by rank)
+    uploaded_count = 0
     for rank, url in enumerate(image_urls, start=1):
         try:
             async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
@@ -391,6 +368,7 @@ async def replace_listing_images(listing_id: int, image_urls: list[str]) -> None
                 if not r.is_success:
                     print(f"[etsy] Image upload failed rank {rank}: {r.status_code}: {r.text}")
                 else:
+                    uploaded_count += 1
                     print(f"[etsy] Uploaded image rank {rank}/{len(image_urls)}")
             await asyncio.sleep(0.5)
         except Exception as e:
@@ -402,6 +380,64 @@ async def replace_listing_images(listing_id: int, image_urls: list[str]) -> None
             await delete_listing_image(listing_id, img_id)
         except Exception as e:
             print(f"[etsy] Could not delete old image {img_id}: {e}")
+
+    # Step 3 — fetch the authoritative listing_image_ids from Etsy by rank
+    # (upload response can return the same ID for every upload — this is the reliable path)
+    url_to_image_id: dict[str, int] = {}
+    try:
+        final_images = await fetch_listing_images(listing_id)
+        final_images.sort(key=lambda x: x.get("rank", 99))
+        for i, url in enumerate(image_urls):
+            if i < len(final_images):
+                url_to_image_id[url] = final_images[i]["listing_image_id"]
+    except Exception as e:
+        print(f"[etsy] Could not resolve final image IDs (variation linking will be skipped): {e}")
+
+    return url_to_image_id
+
+
+async def get_listing_color_property(listing_id: int) -> tuple[int, dict[str, int]]:
+    """Fetch the color property_id and {lowercase_color_name: value_id} for a listing.
+
+    Used to link uploaded images to color variation values via set_variation_images().
+    Returns (0, {}) if the listing has no color property (e.g. stickers, which vary by size).
+    """
+    token = await _get_token()
+    async with httpx.AsyncClient(timeout=15) as client:
+        r = await client.get(
+            f"{ETSY_BASE}/application/listings/{listing_id}/inventory",
+            headers=_headers(token),
+        )
+        r.raise_for_status()
+    color_property_id = 0
+    color_value_map: dict[str, int] = {}
+    for product in r.json().get("products", []):
+        for pv in product.get("property_values", []):
+            if "color" in pv.get("property_name", "").lower():
+                color_property_id = pv["property_id"]
+                for name, vid in zip(pv.get("values", []), pv.get("value_ids", [])):
+                    color_value_map.setdefault(name.lower(), vid)
+    return color_property_id, color_value_map
+
+
+async def set_variation_images(listing_id: int, variation_images: list[dict]) -> None:
+    """Link listing images to color variation values.
+
+    variation_images: [{"property_id": int, "value_id": int, "image_id": int}]
+    Replaces ALL variation-image associations for the listing — must include every
+    color you want linked, not just new ones.
+    """
+    if not variation_images:
+        return
+    token = await _get_token()
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}/variation-images",
+            headers=_headers(token),
+            json={"variation_images": variation_images},
+        )
+        if not r.is_success:
+            print(f"[etsy] set_variation_images {r.status_code}: {r.text}")
 
 
 def listing_url(listing_id: int) -> str:
@@ -452,15 +488,16 @@ async def update_listing(
     return_policy_id    = await _get_return_policy_id()
 
     payload: dict = {
-        "taxonomy_id":         _taxonomy_id(product_type),
         "shipping_profile_id": shipping_profile_id,
         "who_made":            "i_did",
         "when_made":           "made_to_order",
         "type":                "physical",
         "is_supply":           False,
         "materials":           _MATERIALS.get(product_type.lower(), []),
-        "shop_section_id":     _SHOP_SECTIONS.get(product_type.lower()),
     }
+    section_id = _SHOP_SECTIONS.get(product_type.lower())
+    if section_id:
+        payload["shop_section_id"] = section_id
     if title:
         payload["title"] = title[:140]
     if description:
