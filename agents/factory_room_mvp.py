@@ -332,6 +332,54 @@ async def run_factory(input: dict) -> dict:
                 print(f"[factory] Replacing Etsy images with {len(selected)} curated mockups...")
                 await etsy_client.replace_listing_images(etsy_listing_id, selected)
                 print(f"[factory] Etsy images updated")
+
+                # Mirror same images + order to Shopify so both stores are in sync
+                shopify_pid = shopify_result["printify_product_id"]
+                shopify_product_id = None
+                try:
+                    import httpx as _httpx
+                    _shopify_hdr = {
+                        "X-Shopify-Access-Token": os.getenv("SHOPIFY_ACCESS_TOKEN", ""),
+                        "Content-Type": "application/json",
+                    }
+                    _base = f"https://{os.getenv('SHOPIFY_STORE_URL', '')}/admin/api/2024-04"
+                    # Find the Shopify product ID from the external handle URL
+                    sp_url = shopify_result.get("product_url", "")
+                    handle  = sp_url.rstrip("/").split("/")[-1]
+                    async with _httpx.AsyncClient(timeout=30) as _c:
+                        r = await _c.get(f"{_base}/products.json?handle={handle}", headers=_shopify_hdr)
+                        prods = r.json().get("products", [])
+                        if prods:
+                            shopify_product_id = prods[0]["id"]
+                except Exception as _e:
+                    print(f"[factory] Could not resolve Shopify product ID: {_e}")
+
+                if shopify_product_id:
+                    try:
+                        # Fetch the ranked Etsy images we just uploaded
+                        etsy_imgs = await etsy_client.fetch_listing_images(etsy_listing_id)
+                        etsy_imgs.sort(key=lambda i: i.get("rank", 99))
+                        etsy_urls = [i["url_fullxfull"] for i in etsy_imgs]
+                        async with _httpx.AsyncClient(timeout=30) as _c:
+                            existing = (await _c.get(
+                                f"{_base}/products/{shopify_product_id}/images.json",
+                                headers=_shopify_hdr
+                            )).json().get("images", [])
+                            for img in existing:
+                                await _c.delete(
+                                    f"{_base}/products/{shopify_product_id}/images/{img['id']}.json",
+                                    headers=_shopify_hdr,
+                                )
+                        async with _httpx.AsyncClient(timeout=60) as _c:
+                            for pos, url in enumerate(etsy_urls, start=1):
+                                await _c.post(
+                                    f"{_base}/products/{shopify_product_id}/images.json",
+                                    headers=_shopify_hdr,
+                                    json={"image": {"src": url, "position": pos}},
+                                )
+                        print(f"[factory] Shopify images synced from Etsy ({len(etsy_urls)} images)")
+                    except Exception as _e:
+                        print(f"[factory] Shopify image sync failed (non-fatal): {_e}")
         except Exception as e:
             print(f"[factory] Etsy image replacement failed (non-fatal): {e}")
 
