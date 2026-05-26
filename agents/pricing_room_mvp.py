@@ -12,7 +12,7 @@ import httpx
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 PRICING_DIR = os.path.join(BRAIN_PATH, "rooms", "pricing", "reports")
-SHOPIFY_API_VERSION = "2025-01"
+SHOPIFY_API_VERSION = "2024-04"
 
 _PRICING_FALLBACK = """You are the Pricing Agent for a print-on-demand store selling on both Shopify and Etsy.
 Analyse the products and competitor intelligence provided. Give clear, actionable pricing recommendations.

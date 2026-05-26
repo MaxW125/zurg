@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 import httpx
 import agents.etsy_client as etsy
 
-SHOPIFY_API_VERSION = "2025-01"
+SHOPIFY_API_VERSION = "2024-04"
 _WINDOW_DAYS = 30
 
 

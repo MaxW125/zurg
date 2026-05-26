@@ -11,7 +11,7 @@ import agents.etsy_client as etsy
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 ANALYTICS_DIR = os.path.join(BRAIN_PATH, "rooms", "analytics", "reports")
-SHOPIFY_API_VERSION = "2025-01"
+SHOPIFY_API_VERSION = "2024-04"
 
 _ANALYSIS_FALLBACK = """You are the Analytics Agent for a print-on-demand business selling on Shopify and Etsy.
 Analyze the provided store and pipeline data and generate a concise report.

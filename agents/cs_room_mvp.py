@@ -11,7 +11,7 @@ import httpx
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 CS_DIR = os.path.join(BRAIN_PATH, "rooms", "cs", "reports")
-SHOPIFY_API_VERSION = "2025-01"
+SHOPIFY_API_VERSION = "2024-04"
 
 _CS_FALLBACK = """You are the Customer Service Agent for a print-on-demand store selling on Shopify and Etsy.
 Your job is to draft professional, warm, and concise customer messages.

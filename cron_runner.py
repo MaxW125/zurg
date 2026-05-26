@@ -183,12 +183,16 @@ def run_briefing_job():
 
     rooms_ok = len(report.get("rooms_included", []))
 
+    highlights = report.get("room_highlights", {})
+    highlights_str = "\n".join(f"• {r.replace('_',' ').title()}: {h}" for r, h in highlights.items()) or "• No highlights"
+
     message = (
         f"📊 Daily Briefing — {run_date}\n\n"
         f"{summary}\n\n"
         f"🔥 Fix:\n{fix_str}\n\n"
         f"🚀 Launch:\n{launch_str}\n\n"
         f"👁 Watch:\n{watch_str}\n\n"
+        f"📋 Room Highlights:\n{highlights_str}\n\n"
         f"({rooms_ok}/14 rooms reported)"
     )
 

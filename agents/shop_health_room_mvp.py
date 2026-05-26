@@ -11,7 +11,7 @@ import httpx
 
 BRAIN_PATH = os.getenv("BRAIN_PATH", "./brain")
 SHOP_HEALTH_DIR = os.path.join(BRAIN_PATH, "rooms", "shop_health", "reports")
-SHOPIFY_API_VERSION = "2025-01"
+SHOPIFY_API_VERSION = "2024-04"
 
 _SHOP_HEALTH_FALLBACK = """You are the Shop Health Agent for a print-on-demand Shopify and Etsy store.
 Your job is to audit active product listings for SEO weaknesses and staleness, then give precise, actionable fixes.
