@@ -336,8 +336,9 @@ async def fetch_listing_images(listing_id: int) -> list[dict]:
     """Return existing images on an Etsy listing with their listing_image_ids."""
     token = await _get_token()
     async with httpx.AsyncClient(timeout=15) as client:
+        # GET endpoint has no /shops/{shop_id}/ — only POST/DELETE do.
         r = await client.get(
-            f"{ETSY_BASE}/application/shops/{ETSY_SHOP_ID}/listings/{listing_id}/images",
+            f"{ETSY_BASE}/application/listings/{listing_id}/images",
             headers=_headers(token),
         )
         r.raise_for_status()
@@ -356,19 +357,19 @@ async def delete_listing_image(listing_id: int, listing_image_id: int) -> None:
 
 
 async def replace_listing_images(listing_id: int, image_urls: list[str]) -> None:
-    """Delete all existing Etsy listing images and upload a curated set from Printify CDN URLs."""
-    existing = await fetch_listing_images(listing_id)
-    for img in existing:
-        try:
-            await delete_listing_image(listing_id, img["listing_image_id"])
-        except Exception as e:
-            print(f"[etsy] Could not delete image {img['listing_image_id']}: {e}")
+    """Upload a curated set of images to an Etsy listing, replacing all existing ones.
+
+    Upload-first order: new images go up first so the listing always has ≥1 image,
+    then old images are deleted. Avoids the Etsy '≥1 image required' 400 error.
+    """
+    old_ids = [img["listing_image_id"] for img in await fetch_listing_images(listing_id)]
 
     token = await _get_token()
     headers = {
         "Authorization": f"Bearer {token}",
         "x-api-key":     f"{ETSY_CLIENT_ID}:{ETSY_SHARED_SECRET}",
     }
+    # Step 1 — upload new images
     for rank, url in enumerate(image_urls, start=1):
         try:
             async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
@@ -389,6 +390,13 @@ async def replace_listing_images(listing_id: int, image_urls: list[str]) -> None
             await asyncio.sleep(0.5)
         except Exception as e:
             print(f"[etsy] Image upload error rank {rank}: {e}")
+
+    # Step 2 — delete original images now that new ones exist
+    for img_id in old_ids:
+        try:
+            await delete_listing_image(listing_id, img_id)
+        except Exception as e:
+            print(f"[etsy] Could not delete old image {img_id}: {e}")
 
 
 def listing_url(listing_id: int) -> str:

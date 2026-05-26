@@ -109,16 +109,24 @@ async def run_factory(input: dict) -> dict:
             return bool(preferred_set.intersection(img.get("variant_ids", [])))
 
         if "sticker" in pt:
+            # Sticker variants are sizes not colors — preferred_variant_ids may be empty.
+            # Fall back to first variant_id seen in images (smallest size = first generated).
             first = preferred_variant_ids[0] if preferred_variant_ids else None
             if not first:
-                return []
+                for img in images:
+                    vids = img.get("variant_ids", [])
+                    if vids:
+                        first = vids[0]
+                        break
+            if not first:
+                return [img["src"] for img in images if label(img) == "front"][:1]
             first_imgs = [img for img in images if first in img.get("variant_ids", [])]
             front   = [img["src"] for img in first_imgs if label(img) == "front"][:1]
             context = [img["src"] for img in first_imgs if label(img).startswith("context")]
             return front + context
 
         elif "apron" in pt:
-            pref_imgs = [img for img in images if is_preferred(img)]
+            pref_imgs = [img for img in images if is_preferred(img)] or images
             front     = [img["src"] for img in pref_imgs if label(img) == "front"][:1]
             on_person = [img["src"] for img in images if label(img) == "on-person"]
             return front + on_person
